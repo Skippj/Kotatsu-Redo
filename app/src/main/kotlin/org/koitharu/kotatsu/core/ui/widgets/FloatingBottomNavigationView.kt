@@ -11,7 +11,6 @@ import androidx.annotation.IdRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -85,7 +84,7 @@ class FloatingBottomNavigationView @JvmOverloads constructor(
 							val menuItem = menu.findItem(id) ?: return@FloatingNavBar
 							reselectedListener?.invoke(menuItem)
 						},
-						modifier = Modifier.wrapContentWidth(),
+						modifier = Modifier.fillMaxWidth(),
 						showContinue = showContinue,
 						onContinueClick = { continueClickListener?.invoke() },
 					)

@@ -176,9 +176,19 @@ class AppRouter private constructor(
     }
 
     fun openAlternatives(manga: Manga) {
+		openAlternatives(listOf(manga))
+	}
+
+	fun openAlternatives(manga: Collection<Manga>) {
+		if (manga.isEmpty()) {
+			return
+		}
         startActivity(
             Intent(contextOrNull() ?: return, AlternativesActivity::class.java)
-                .putExtra(KEY_MANGA, ParcelableManga(manga)),
+				.putParcelableArrayListExtra(
+					KEY_MANGA_LIST,
+					manga.mapTo(ArrayList(manga.size)) { ParcelableManga(it, withDescription = false) },
+				),
         )
     }
 

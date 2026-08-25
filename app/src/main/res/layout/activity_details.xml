@@ -115,7 +115,7 @@
 					android:ellipsize="end"
 					android:includeFontPadding="false"
 					android:maxLines="@integer/details_title_lines"
-					android:textAppearance="?attr/textAppearanceTitleLarge"
+					android:textAppearance="?attr/detailsTitleTextAppearance"
 					android:textIsSelectable="true"
 					app:layout_constraintEnd_toEndOf="parent"
 					app:layout_constraintStart_toEndOf="@id/imageView_cover"
@@ -140,7 +140,7 @@
 
 				<com.google.android.material.chip.Chip
 					android:id="@+id/chip_favorite"
-					style="@style/Widget.Kotatsu.Chip.Dropdown"
+					style="?attr/detailsFavoriteChipStyle"
 					android:layout_width="wrap_content"
 					android:layout_height="wrap_content"
 					android:layout_marginStart="16dp"
@@ -212,6 +212,7 @@
 					android:layout_marginTop="@dimen/margin_normal"
 					app:chipSpacingHorizontal="6dp"
 					app:chipSpacingVertical="6dp"
+					app:chipStyle="?attr/detailsTagChipStyle"
 					app:layout_constraintEnd_toEndOf="parent"
 					app:layout_constraintStart_toStartOf="parent"
 					app:layout_constraintTop_toBottomOf="@+id/textView_description" />

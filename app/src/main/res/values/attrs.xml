@@ -244,4 +244,22 @@
 	-->
 	<attr name="mangaGridSpacing" format="dimension" />
 
+	<!-- Manga details styling. Expressive overrides these without changing the standard appearance. -->
+	<attr name="detailsTitleTextAppearance" format="reference" />
+	<attr name="detailsMetadataLabelTextAppearance" format="reference" />
+	<attr name="detailsFavoriteChipStyle" format="reference" />
+	<attr name="detailsTagChipStyle" format="reference" />
+	<attr name="detailsChapterListItemStyle" format="reference" />
+	<attr name="detailsChapterGridItemStyle" format="reference" />
+	<attr name="detailsChapterTitleTextAppearance" format="reference" />
+	<attr name="detailsChapterSupportingTextAppearance" format="reference" />
+	<attr name="detailsChapterBookmarkIconStyle" format="reference" />
+	<attr name="detailsChapterDownloadIconStyle" format="reference" />
+	<attr name="detailsChapterNewIndicatorStyle" format="reference" />
+	<attr name="detailsChapterItemMarginHorizontal" format="dimension" />
+	<attr name="detailsChapterItemMarginVertical" format="dimension" />
+	<attr name="detailsReadSplitButtonStyle" format="reference" />
+	<attr name="detailsReadLeadingButtonStyle" format="reference" />
+	<attr name="detailsReadMenuButtonStyle" format="reference" />
+
 </resources>

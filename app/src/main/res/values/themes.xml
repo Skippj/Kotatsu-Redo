@@ -75,6 +75,22 @@
 		<item name="gridTitleTextAppearanceSmall">@style/TextAppearance.Kotatsu.GridTitle.Small</item>
 		<item name="readingProgressStyle">@style/ProgressDrawable</item>
 		<item name="mangaGridSpacing">@dimen/manga_grid_spacing</item>
+		<item name="detailsTitleTextAppearance">?attr/textAppearanceTitleLarge</item>
+		<item name="detailsMetadataLabelTextAppearance">?attr/textAppearanceTitleSmall</item>
+		<item name="detailsFavoriteChipStyle">@style/Widget.Kotatsu.Chip.Dropdown</item>
+		<item name="detailsTagChipStyle">@style/Widget.Kotatsu.Chip</item>
+		<item name="detailsChapterListItemStyle">@style/Widget.Kotatsu.Details.ChapterCard</item>
+		<item name="detailsChapterGridItemStyle">@style/Widget.Kotatsu.Details.ChapterGridCard</item>
+		<item name="detailsChapterTitleTextAppearance">?attr/textAppearanceBodyLarge</item>
+		<item name="detailsChapterSupportingTextAppearance">?attr/textAppearanceBodySmall</item>
+		<item name="detailsChapterBookmarkIconStyle">@style/Widget.Kotatsu.Details.ChapterStatus.Bookmark</item>
+		<item name="detailsChapterDownloadIconStyle">@style/Widget.Kotatsu.Details.ChapterStatus.Download</item>
+		<item name="detailsChapterNewIndicatorStyle">@style/Widget.Kotatsu.Details.ChapterStatus.New</item>
+		<item name="detailsChapterItemMarginHorizontal">0dp</item>
+		<item name="detailsChapterItemMarginVertical">0dp</item>
+		<item name="detailsReadSplitButtonStyle">@style/Widget.Kotatsu.Details.ReadSplitButton</item>
+		<item name="detailsReadLeadingButtonStyle">@style/Widget.Kotatsu.Details.ReadButton</item>
+		<item name="detailsReadMenuButtonStyle">@style/Widget.Kotatsu.Details.ReadMenuButton</item>
 
 		<!-- Custom views -->
 		<item name="fastScrollerStyle">@style/Widget.Kotatsu.FastScroller</item>
@@ -223,6 +239,22 @@
 		<item name="textAppearanceLabelLarge">@style/TextAppearance.Kotatsu.Sans.LabelLarge</item>
 		<item name="textAppearanceLabelMedium">@style/TextAppearance.Kotatsu.Sans.LabelMedium</item>
 		<item name="textAppearanceLabelSmall">@style/TextAppearance.Kotatsu.Sans.LabelSmall</item>
+		<item name="detailsTitleTextAppearance">@style/TextAppearance.Kotatsu.Details.Title.Expressive</item>
+		<item name="detailsMetadataLabelTextAppearance">@style/TextAppearance.Kotatsu.Details.MetadataLabel.Expressive</item>
+		<item name="detailsFavoriteChipStyle">@style/Widget.Kotatsu.Details.FavoriteChip.Expressive</item>
+		<item name="detailsTagChipStyle">@style/Widget.Kotatsu.Details.TagChip.Expressive</item>
+		<item name="detailsChapterListItemStyle">@style/Widget.Kotatsu.Details.ChapterCard.Expressive</item>
+		<item name="detailsChapterGridItemStyle">@style/Widget.Kotatsu.Details.ChapterGridCard.Expressive</item>
+		<item name="detailsChapterTitleTextAppearance">?attr/textAppearanceTitleMedium</item>
+		<item name="detailsChapterSupportingTextAppearance">?attr/textAppearanceBodySmall</item>
+		<item name="detailsChapterBookmarkIconStyle">@style/Widget.Kotatsu.Details.ChapterStatus.Bookmark.Expressive</item>
+		<item name="detailsChapterDownloadIconStyle">@style/Widget.Kotatsu.Details.ChapterStatus.Download.Expressive</item>
+		<item name="detailsChapterNewIndicatorStyle">@style/Widget.Kotatsu.Details.ChapterStatus.New.Expressive</item>
+		<item name="detailsChapterItemMarginHorizontal">8dp</item>
+		<item name="detailsChapterItemMarginVertical">3dp</item>
+		<item name="detailsReadSplitButtonStyle">@style/Widget.Kotatsu.Details.ReadSplitButton.Expressive</item>
+		<item name="detailsReadLeadingButtonStyle">@style/Widget.Kotatsu.Details.ReadButton.Expressive</item>
+		<item name="detailsReadMenuButtonStyle">@style/Widget.Kotatsu.Details.ReadMenuButton.Expressive</item>
 		<item name="android:fontFamily">@font/google_sans</item>
 		<item name="fontFamily">@font/google_sans</item>
 		<!-- Strips the extra band Google Sans's metrics add above and below every line. -->

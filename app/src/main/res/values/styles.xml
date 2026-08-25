@@ -129,6 +129,150 @@
 		<item name="chipIconVisible">true</item>
 	</style>
 
+	<style name="ShapeAppearance.Kotatsu.DetailsChip.Expressive" parent="">
+		<item name="cornerFamily">rounded</item>
+		<item name="cornerSize">20dp</item>
+	</style>
+
+	<style name="TextAppearance.Kotatsu.Details.Title.Expressive" parent="TextAppearance.Material3.TitleLarge">
+		<item name="fontFamily">@font/google_sans_bold</item>
+		<item name="android:fontFamily">@font/google_sans_bold</item>
+		<item name="android:textStyle">bold</item>
+	</style>
+
+	<style name="TextAppearance.Kotatsu.Details.MetadataLabel.Expressive" parent="TextAppearance.Material3.TitleSmall">
+		<item name="fontFamily">@font/google_sans_bold</item>
+		<item name="android:fontFamily">@font/google_sans_bold</item>
+		<item name="android:textStyle">bold</item>
+	</style>
+
+	<style name="TextAppearance.Kotatsu.Details.Chip.Expressive" parent="TextAppearance.Material3.LabelLarge">
+		<item name="fontFamily">@font/google_sans_bold</item>
+		<item name="android:fontFamily">@font/google_sans_bold</item>
+		<item name="android:textStyle">bold</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.FavoriteChip.Expressive" parent="Widget.Kotatsu.Chip.Dropdown">
+		<item name="android:textAppearance">@style/TextAppearance.Kotatsu.Details.Chip.Expressive</item>
+		<item name="android:textColor">?attr/colorOnPrimaryContainer</item>
+		<item name="chipBackgroundColor">?attr/colorPrimaryContainer</item>
+		<item name="chipIconTint">?attr/colorOnPrimaryContainer</item>
+		<item name="closeIconTint">?attr/colorOnPrimaryContainer</item>
+		<item name="chipStrokeWidth">0dp</item>
+		<item name="chipMinHeight">40dp</item>
+		<item name="shapeAppearance">@style/ShapeAppearance.Kotatsu.DetailsChip.Expressive</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.TagChip.Expressive" parent="Widget.Kotatsu.Chip">
+		<item name="android:textAppearance">@style/TextAppearance.Kotatsu.Details.Chip.Expressive</item>
+		<item name="android:textColor">?attr/colorOnSecondaryContainer</item>
+		<item name="chipBackgroundColor">?attr/colorSecondaryContainer</item>
+		<item name="chipStrokeWidth">0dp</item>
+		<item name="chipMinHeight">40dp</item>
+		<item name="shapeAppearance">@style/ShapeAppearance.Kotatsu.DetailsChip.Expressive</item>
+	</style>
+
+	<style name="ShapeAppearance.Kotatsu.Details.ChapterCard" parent="">
+		<item name="cornerFamily">rounded</item>
+		<item name="cornerSize">20dp</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterCard" parent="Widget.Material3.CardView.Filled">
+		<item name="cardBackgroundColor">@android:color/transparent</item>
+		<item name="cardElevation">0dp</item>
+		<item name="strokeWidth">0dp</item>
+		<item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.Material3.Corner.None</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterCard.Expressive" parent="Widget.Material3.CardView.Filled">
+		<item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
+		<item name="cardElevation">0dp</item>
+		<item name="rippleColor">?attr/colorPrimary</item>
+		<item name="strokeWidth">0dp</item>
+		<item name="shapeAppearance">@style/ShapeAppearance.Kotatsu.Details.ChapterCard</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterGridCard" parent="Widget.Material3.CardView.Outlined" />
+
+	<style name="Widget.Kotatsu.Details.ChapterGridCard.Expressive" parent="Widget.Material3.CardView.Filled">
+		<item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
+		<item name="cardElevation">0dp</item>
+		<item name="rippleColor">?attr/colorPrimary</item>
+		<item name="strokeWidth">0dp</item>
+		<item name="shapeAppearance">@style/ShapeAppearance.Kotatsu.Details.ChapterCard</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterStatus.Bookmark" parent="">
+		<item name="android:layout_width">wrap_content</item>
+		<item name="android:layout_height">wrap_content</item>
+		<item name="android:layout_marginEnd">?android:attr/listPreferredItemPaddingEnd</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterStatus.Bookmark.Expressive">
+		<item name="android:layout_width">36dp</item>
+		<item name="android:layout_height">36dp</item>
+		<item name="android:layout_marginEnd">8dp</item>
+		<item name="android:background">@drawable/bg_chapter_bookmark_status</item>
+		<item name="android:padding">8dp</item>
+		<item name="android:tint">?attr/colorOnSecondaryContainer</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterStatus.Download" parent="Widget.Kotatsu.Details.ChapterStatus.Bookmark" />
+
+	<style name="Widget.Kotatsu.Details.ChapterStatus.Download.Expressive">
+		<item name="android:layout_width">36dp</item>
+		<item name="android:layout_height">36dp</item>
+		<item name="android:layout_marginEnd">8dp</item>
+		<item name="android:background">@drawable/bg_chapter_download_status</item>
+		<item name="android:padding">8dp</item>
+		<item name="android:tint">?attr/colorOnTertiaryContainer</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterStatus.New" parent="">
+		<item name="android:layout_width">wrap_content</item>
+		<item name="android:layout_height">wrap_content</item>
+		<item name="android:visibility">gone</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ChapterStatus.New.Expressive">
+		<item name="android:layout_width">32dp</item>
+		<item name="android:layout_height">32dp</item>
+		<item name="android:layout_marginEnd">8dp</item>
+		<item name="android:background">@drawable/bg_chapter_new_status</item>
+		<item name="android:padding">7dp</item>
+		<item name="android:tint">?attr/colorOnErrorContainer</item>
+		<item name="android:visibility">gone</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ReadSplitButton" parent="Widget.Material3.MaterialSplitButton" />
+
+	<style name="Widget.Kotatsu.Details.ReadSplitButton.Expressive" parent="Widget.Material3.MaterialSplitButton">
+		<item name="android:spacing">3dp</item>
+		<item name="android:paddingTop">6dp</item>
+		<item name="android:paddingBottom">6dp</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ReadButton" parent="Widget.Material3.SplitButton.LeadingButton.Filled">
+		<item name="android:minWidth">@dimen/read_button_min_width</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ReadButton.Expressive" parent="Widget.Material3.SplitButton.LeadingButton.Filled">
+		<item name="android:includeFontPadding">false</item>
+		<item name="android:minHeight">56dp</item>
+		<item name="android:minWidth">104dp</item>
+		<item name="android:textAppearance">@style/TextAppearance.Kotatsu.Details.Chip.Expressive</item>
+		<item name="iconPadding">8dp</item>
+		<item name="iconSize">22dp</item>
+	</style>
+
+	<style name="Widget.Kotatsu.Details.ReadMenuButton" parent="Widget.Material3.SplitButton.IconButton.Filled" />
+
+	<style name="Widget.Kotatsu.Details.ReadMenuButton.Expressive" parent="Widget.Material3.SplitButton.IconButton.Filled">
+		<item name="android:minHeight">56dp</item>
+		<item name="android:minWidth">56dp</item>
+		<item name="iconSize">24dp</item>
+	</style>
+
 	<style name="Widget.Kotatsu.Button.More" parent="Widget.Material3.Button.TextButton">
 		<item name="android:minWidth">48dp</item>
 	</style>
