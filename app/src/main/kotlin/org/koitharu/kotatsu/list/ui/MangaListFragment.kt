@@ -325,7 +325,7 @@ abstract class MangaListFragment :
 			}
 
 			R.id.action_replace_source -> {
-				router.openAlternatives(selectedItems.toList())
+				router.openSourceReplacement(selectedItems.toList())
 				mode?.finish()
 				true
 			}

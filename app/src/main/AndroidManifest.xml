@@ -291,6 +291,9 @@
 			android:label="@string/reading_stats" />
 		<activity
 			android:name="org.koitharu.kotatsu.alternatives.ui.AlternativesActivity"
+			android:label="@string/alternatives" />
+		<activity
+			android:name="org.koitharu.kotatsu.alternatives.ui.SourceReplacementActivity"
 			android:label="@string/replace_source" />
 		<activity
 			android:name="org.koitharu.kotatsu.settings.about.AppUpdateActivity"

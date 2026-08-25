@@ -25,6 +25,7 @@ import dagger.hilt.android.EntryPointAccessors
 import org.koitharu.kotatsu.BuildConfig
 import org.koitharu.kotatsu.R
 import org.koitharu.kotatsu.alternatives.ui.AlternativesActivity
+import org.koitharu.kotatsu.alternatives.ui.SourceReplacementActivity
 import org.koitharu.kotatsu.backups.ui.backup.BackupDialogFragment
 import org.koitharu.kotatsu.backups.ui.restore.RestoreDialogFragment
 import org.koitharu.kotatsu.bookmarks.ui.AllBookmarksActivity
@@ -176,15 +177,18 @@ class AppRouter private constructor(
     }
 
     fun openAlternatives(manga: Manga) {
-		openAlternatives(listOf(manga))
+		startActivity(
+			Intent(contextOrNull() ?: return, AlternativesActivity::class.java)
+				.putExtra(KEY_MANGA, ParcelableManga(manga, withDescription = false)),
+		)
 	}
 
-	fun openAlternatives(manga: Collection<Manga>) {
+	fun openSourceReplacement(manga: Collection<Manga>) {
 		if (manga.isEmpty()) {
 			return
 		}
         startActivity(
-            Intent(contextOrNull() ?: return, AlternativesActivity::class.java)
+			Intent(contextOrNull() ?: return, SourceReplacementActivity::class.java)
 				.putParcelableArrayListExtra(
 					KEY_MANGA_LIST,
 					manga.mapTo(ArrayList(manga.size)) { ParcelableManga(it, withDescription = false) },

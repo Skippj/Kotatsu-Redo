@@ -1,6 +1,7 @@
 package org.koitharu.kotatsu.alternatives.domain
 
 import android.util.Log
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.emptyFlow
@@ -14,6 +15,7 @@ import org.koitharu.kotatsu.core.parser.ParserMangaRepository
 import org.koitharu.kotatsu.core.prefs.AppSettings
 import org.koitharu.kotatsu.core.util.ext.toLocale
 import org.koitharu.kotatsu.explore.data.MangaSourcesRepository
+import org.koitharu.kotatsu.explore.data.SourcePreset
 import org.koitharu.kotatsu.explore.data.SourcePresetsRepository
 import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.model.MangaParserSource
@@ -23,6 +25,7 @@ import org.koitharu.kotatsu.parsers.util.runCatchingCancellable
 import org.koitharu.kotatsu.search.domain.SearchKind
 import org.koitharu.kotatsu.search.domain.SearchV2Helper
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
 private const val MAX_PARALLELISM = 8
@@ -43,18 +46,107 @@ class AlternativesUseCase @Inject constructor(
 
 	suspend operator fun invoke(
 		manga: Manga,
-		throughDisabledSources: Boolean,
+		sourceScope: AlternativeSourceScope,
 		query: String = manga.title,
 		loadDetails: Boolean = true,
 	): Flow<Manga> {
-		val sources = getCandidateSources(manga.source, throughDisabledSources)
+		val sources = getCandidateSources(
+			ref = manga.source,
+			sourceScope = sourceScope,
+			sameLanguageOnly = true,
+		)
 		return search(manga, sources, query, loadDetails)
+	}
+
+	suspend operator fun invoke(
+		manga: Manga,
+		options: AlternativesSearchOptions,
+	): Flow<AlternativeSearchEvent> {
+		val query = options.query.trim()
+		if (query.isEmpty()) return emptyFlow()
+		val sources = getCandidateSources(
+			ref = manga.source,
+			sourceScope = options.sourceScope,
+			sameLanguageOnly = options.sameLanguageOnly,
+			sameContentTypeOnly = options.sameContentTypeOnly,
+		)
+		if (sources.isEmpty()) return emptyFlow()
+		return channelFlow {
+			val completedSources = AtomicInteger()
+			send(AlternativeSearchEvent.Progress(0, sources.size))
+			val workerCount = minOf(MAX_PARALLELISM, sources.size)
+			repeat(workerCount) { workerIndex ->
+				launch {
+					for (sourceIndex in workerIndex until sources.size step workerCount) {
+						val source = sources[sourceIndex]
+						try {
+							// Finish this source's candidate details before this worker starts another
+							// source, so chapter requests are not starved behind every source search.
+							coroutineScope {
+								search(
+									manga = manga,
+									sources = listOf(source),
+									query = query,
+									loadDetails = false,
+								).collect { candidate ->
+									launch {
+										send(AlternativeSearchEvent.Result(loadDetails(candidate)))
+									}
+								}
+							}
+						} finally {
+							send(
+								AlternativeSearchEvent.Progress(
+									completedSources = completedSources.incrementAndGet(),
+									totalSources = sources.size,
+								),
+							)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	suspend fun getCandidateSources(
 		ref: MangaSource,
-		throughDisabledSources: Boolean,
-	): List<MangaSource> = getSources(ref, throughDisabledSources)
+		sourceScope: AlternativeSourceScope,
+		sameLanguageOnly: Boolean = true,
+		sameContentTypeOnly: Boolean = false,
+	): List<MangaSource> {
+		val sources = when (sourceScope) {
+			AlternativeSourceScope.CURRENT_PRESET -> getActivePreset()?.let(::getPresetSources).orEmpty()
+			AlternativeSourceScope.ENABLED -> sourcesRepository.getEnabledSources()
+		}
+		return sources.asSequence()
+			.distinctBy(MangaSource::name)
+			.filter { it.name != ref.name }
+			.filterNot { settings.isNsfwContentDisabled && it.isNsfw() }
+			.filter { !sameLanguageOnly || it.hasSameLanguageAs(ref) }
+			.filter { !sameContentTypeOnly || it.hasSameContentTypeAs(ref) }
+			.sortedWith(compareByDescending<MangaSource> { it.priority(ref) }.thenBy(MangaSource::name))
+			.toList()
+	}
+
+	suspend fun getSourceScopeOptions(
+		ref: MangaSource,
+		sameLanguageOnly: Boolean = false,
+	): AlternativeSourceScopeOptions {
+		val preset = getActivePreset()
+		val hasPresetCandidates = preset != null && getPresetSources(preset).any { source ->
+			source.name != ref.name &&
+				(!settings.isNsfwContentDisabled || !source.isNsfw()) &&
+				(!sameLanguageOnly || source.hasSameLanguageAs(ref))
+		}
+		return AlternativeSourceScopeOptions(
+			defaultScope = if (hasPresetCandidates) {
+				AlternativeSourceScope.CURRENT_PRESET
+			} else {
+				AlternativeSourceScope.ENABLED
+			},
+			presetTitle = preset?.title?.takeIf { hasPresetCandidates },
+		)
+	}
 
 	suspend fun searchSource(
 		manga: Manga,
@@ -106,20 +198,7 @@ class AlternativesUseCase @Inject constructor(
 						if (m.id != manga.id) {
 							if (loadDetails) {
 								launch {
-									val detailsResult = runCatchingCancellable {
-										withSourcePermit(source) {
-											mangaRepositoryFactory.create(m.source).getDetails(m)
-										}
-									}
-									detailsResult.exceptionOrNull()?.let { error ->
-										Log.w(
-											SOURCE_REPLACEMENT_TAG,
-											"Details load failed; using search result: source=${source.name} title=\"${m.title}\" id=${m.id}",
-											error,
-										)
-									}
-									val details = detailsResult.getOrDefault(m)
-									send(details)
+									send(loadDetails(m))
 								}
 							} else {
 								send(m)
@@ -129,6 +208,22 @@ class AlternativesUseCase @Inject constructor(
 				}
 			}
 		}
+	}
+
+	private suspend fun loadDetails(manga: Manga): Manga {
+		val detailsResult = runCatchingCancellable {
+			withSourcePermit(manga.source) {
+				mangaRepositoryFactory.create(manga.source).getDetails(manga)
+			}
+		}
+		detailsResult.exceptionOrNull()?.let { error ->
+			Log.w(
+				SOURCE_REPLACEMENT_TAG,
+				"Details load failed; using search result: source=${manga.source.name} title=\"${manga.title}\" id=${manga.id}",
+				error,
+			)
+		}
+		return detailsResult.getOrDefault(manga)
 	}
 
 	private suspend fun <T> withSourcePermit(source: MangaSource, block: suspend () -> T): T {
@@ -162,33 +257,22 @@ class AlternativesUseCase @Inject constructor(
 		}
 	}
 
-	private suspend fun getSources(ref: MangaSource, disabled: Boolean): List<MangaSource> {
-		val presetId = settings.activeSourcePresetId
-		if (presetId != 0L) {
-			val preset = presetsRepository.getById(presetId)
-			if (preset != null) {
-				if (preset.sources.isEmpty()) return emptyList()
-				val skipNsfw = settings.isNsfwContentDisabled
-				return sourcesRepository.allMangaSources.filter { source ->
-					source.name != ref.name &&
-						source.hasSameLanguageAs(ref) &&
-						source.name in preset.sources &&
-						(!skipNsfw || !source.isNsfw())
-				}.sortedByDescending { it.priority(ref) }
-			}
-		}
-		return (if (disabled) {
-			sourcesRepository.getDisabledSources().toList()
-		} else {
-			sourcesRepository.getEnabledSources()
-		}).filter { it.name != ref.name && it.hasSameLanguageAs(ref) }
-			.sortedByDescending { it.priority(ref) }
+	private suspend fun getActivePreset(): SourcePreset? = settings.activeSourcePresetId
+		.takeIf { it != 0L }
+		?.let { presetsRepository.getById(it) }
+
+	private fun getPresetSources(preset: SourcePreset): List<MangaSource> {
+		if (preset.sources.isEmpty()) return emptyList()
+		return sourcesRepository.allMangaSources.filter { it.name in preset.sources }
 	}
 
 	private fun MangaSource.hasSameLanguageAs(ref: MangaSource): Boolean {
 		val refLanguage = ref.getLocale()?.language?.takeIf(String::isNotBlank) ?: return true
 		return getLocale()?.language?.takeIf(String::isNotBlank) == refLanguage
 	}
+
+	private fun MangaSource.hasSameContentTypeAs(ref: MangaSource): Boolean =
+		this is MangaParserSource && ref is MangaParserSource && contentType == ref.contentType
 
 	private fun MangaSource.priority(ref: MangaSource): Int {
 		var res = 0

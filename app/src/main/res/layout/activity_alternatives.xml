@@ -20,6 +20,34 @@
 			app:titleCentered="true"
 			tools:title="@string/replace_source" />
 
+		<com.google.android.material.progressindicator.LinearProgressIndicator
+			android:id="@+id/progressSources"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:indeterminate="true"
+			android:visibility="gone"
+			app:hideAnimationBehavior="escape"
+			app:showAnimationBehavior="inward" />
+
+		<HorizontalScrollView
+			android:id="@+id/scrollViewSummary"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:clipToPadding="false"
+			android:paddingHorizontal="12dp"
+			android:scrollbars="none">
+
+			<org.koitharu.kotatsu.core.ui.widgets.ChipsView
+				android:id="@+id/chipsSummary"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:paddingVertical="4dp"
+				app:chipStyle="@style/Widget.Kotatsu.Chip.Filter"
+				app:singleLine="true"
+				tools:ignore="SpeakableTextPresentCheck" />
+
+		</HorizontalScrollView>
+
 		<LinearLayout
 			android:id="@+id/planningProgressContainer"
 			android:layout_width="match_parent"

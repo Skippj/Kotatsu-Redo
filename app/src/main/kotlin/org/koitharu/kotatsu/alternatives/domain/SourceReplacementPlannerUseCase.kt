@@ -27,6 +27,8 @@ class SourceReplacementPlannerUseCase @Inject constructor(
 
 	suspend operator fun invoke(
 		manga: List<Manga>,
+		sourceScope: AlternativeSourceScope,
+		excludedSourceNames: Set<String> = emptySet(),
 		onProgress: (SourceComparisonProgress) -> Unit = {},
 		onSourceFailed: (MangaSource) -> Unit = {},
 	): List<SourceReplacementPlan> = coroutineScope {
@@ -36,8 +38,9 @@ class SourceReplacementPlannerUseCase @Inject constructor(
 		}
 		val sources = alternativesUseCase.getCandidateSources(
 			ref = seeds.first().source,
-			throughDisabledSources = false,
-		)
+			sourceScope = sourceScope,
+			sameLanguageOnly = true,
+		).filter { it.name !in excludedSourceNames }
 		val totalChecks = sources.size * seeds.size
 		val progressLock = Any()
 		var completedChecks = 0
@@ -106,35 +109,29 @@ class SourceReplacementPlannerUseCase @Inject constructor(
 			COMPARISON_REQUEST_TIMEOUT_MS
 		}
 		val matches = mutableMapOf<Long, ScoredMatch>()
-		var processed = 0
+		val initialSeed = seeds.first()
+		val initialOutcome = compareTitle(
+			source = source,
+			seed = initialSeed,
+			timeout = timeout,
+			initialProbe = true,
+		)
+		onTitleChecked()
+		initialOutcome.match?.let { match -> matches[match.seedId] = match }
+		if (initialOutcome.failed) {
+			repeat(seeds.size - 1) { onTitleChecked() }
+			return SourceComparisonResult(matches = matches, failed = true)
+		}
+		var processed = 1
 		var timeouts = 0
-		var failed = false
-		for (batch in seeds.chunked(parallelism)) {
+		for (batch in seeds.drop(1).chunked(parallelism)) {
 			if (timeouts >= MAX_COMPARISON_TIMEOUTS_PER_SOURCE) {
 				break
 			}
 			val outcomes = coroutineScope {
 				batch.map { seed ->
 					async {
-						val requestFailed = AtomicBoolean(false)
-						val completed = withTimeoutOrNull(timeout) {
-							ComparisonOutcome(
-								match = findMatch(
-									seed = seed,
-									source = source,
-									loadDetails = false,
-									onFailure = { requestFailed.set(true) },
-								),
-								timedOut = false,
-								failed = requestFailed.get(),
-							)
-						}
-						completed ?: ComparisonOutcome(match = null, timedOut = true, failed = true).also {
-							Log.w(
-								TAG,
-								"Initial comparison timed out: source=${source.name} title=\"${seed.title}\" id=${seed.id} timeoutMs=$timeout",
-							)
-						}
+						compareTitle(source, seed, timeout, initialProbe = false)
 					}
 				}.awaitAll()
 			}
@@ -144,12 +141,39 @@ class SourceReplacementPlannerUseCase @Inject constructor(
 				if (outcome.timedOut) {
 					timeouts++
 				}
-				failed = failed || outcome.failed
 				outcome.match?.let { match -> matches[match.seedId] = match }
 			}
 		}
 		repeat(seeds.size - processed) { onTitleChecked() }
-		return SourceComparisonResult(matches = matches, failed = failed)
+		return SourceComparisonResult(matches = matches, failed = false)
+	}
+
+	private suspend fun compareTitle(
+		source: MangaSource,
+		seed: Manga,
+		timeout: Long,
+		initialProbe: Boolean,
+	): ComparisonOutcome {
+		val requestFailed = AtomicBoolean(false)
+		val completed = withTimeoutOrNull(timeout) {
+			ComparisonOutcome(
+				match = findMatch(
+					seed = seed,
+					source = source,
+					loadDetails = false,
+					onFailure = { requestFailed.set(true) },
+				),
+				timedOut = false,
+				failed = requestFailed.get(),
+			)
+		}
+		return completed ?: ComparisonOutcome(match = null, timedOut = true, failed = true).also {
+			Log.w(
+				TAG,
+				(if (initialProbe) "Initial source probe timed out" else "Source comparison timed out") +
+					": source=${source.name} title=\"${seed.title}\" id=${seed.id} timeoutMs=$timeout",
+			)
+		}
 	}
 
 	suspend fun resolve(

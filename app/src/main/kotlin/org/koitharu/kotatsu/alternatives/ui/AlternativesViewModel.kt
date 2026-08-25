@@ -1,12 +1,11 @@
 package org.koitharu.kotatsu.alternatives.ui
 
-import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,564 +15,291 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.plus
 import org.koitharu.kotatsu.R
+import org.koitharu.kotatsu.alternatives.domain.AlternativeSearchEvent
+import org.koitharu.kotatsu.alternatives.domain.AlternativeSearchStatus
+import org.koitharu.kotatsu.alternatives.domain.AlternativeSortOrder
+import org.koitharu.kotatsu.alternatives.domain.AlternativeSourceScope
+import org.koitharu.kotatsu.alternatives.domain.AlternativesSearchOptions
 import org.koitharu.kotatsu.alternatives.domain.AlternativesUseCase
 import org.koitharu.kotatsu.alternatives.domain.MigrateUseCase
-import org.koitharu.kotatsu.alternatives.domain.SourceReplacementPlan
-import org.koitharu.kotatsu.alternatives.domain.SourceReplacementPlannerUseCase
-import org.koitharu.kotatsu.core.model.LocalMangaSource
 import org.koitharu.kotatsu.core.model.chaptersCount
-import org.koitharu.kotatsu.core.model.getLocale
 import org.koitharu.kotatsu.core.model.parcelable.ParcelableManga
 import org.koitharu.kotatsu.core.nav.AppRouter
-import org.koitharu.kotatsu.core.parser.MangaDataRepository
 import org.koitharu.kotatsu.core.parser.MangaRepository
 import org.koitharu.kotatsu.core.prefs.ListMode
 import org.koitharu.kotatsu.core.ui.BaseViewModel
 import org.koitharu.kotatsu.core.util.ext.MutableEventFlow
 import org.koitharu.kotatsu.core.util.ext.call
 import org.koitharu.kotatsu.core.util.ext.require
-import org.koitharu.kotatsu.explore.data.MangaSourcesRepository
+import org.koitharu.kotatsu.core.util.ext.toLocale
 import org.koitharu.kotatsu.list.domain.MangaListMapper
-import org.koitharu.kotatsu.list.ui.model.ButtonFooter
 import org.koitharu.kotatsu.list.ui.model.EmptyState
 import org.koitharu.kotatsu.list.ui.model.ListModel
 import org.koitharu.kotatsu.list.ui.model.LoadingFooter
 import org.koitharu.kotatsu.list.ui.model.LoadingState
 import org.koitharu.kotatsu.list.ui.model.MangaGridModel
 import org.koitharu.kotatsu.parsers.model.Manga
+import org.koitharu.kotatsu.parsers.model.MangaParserSource
 import org.koitharu.kotatsu.parsers.model.MangaSource
-import org.koitharu.kotatsu.parsers.util.runCatchingCancellable
+import org.koitharu.kotatsu.parsers.util.suspendlazy.getOrDefault
+import org.koitharu.kotatsu.parsers.util.suspendlazy.suspendLazy
+import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.abs
 
 @HiltViewModel
 class AlternativesViewModel @Inject constructor(
-	private val savedStateHandle: SavedStateHandle,
+	savedStateHandle: SavedStateHandle,
 	private val mangaRepositoryFactory: MangaRepository.Factory,
-	private val mangaDataRepository: MangaDataRepository,
 	private val alternativesUseCase: AlternativesUseCase,
-	private val replacementPlanner: SourceReplacementPlannerUseCase,
 	private val migrateUseCase: MigrateUseCase,
 	private val mangaListMapper: MangaListMapper,
-	private val sourcesRepository: MangaSourcesRepository,
 ) : BaseViewModel() {
 
-	private val requestedManga: List<Manga> = savedStateHandle
-		.get<List<ParcelableManga>>(AppRouter.KEY_MANGA_LIST)
-		?.map(ParcelableManga::manga)
-		?.distinctBy(Manga::id)
-		?.takeIf(List<Manga>::isNotEmpty)
-		?: listOf(savedStateHandle.require<ParcelableManga>(AppRouter.KEY_MANGA).manga)
-	private val originSource = requestedManga.first().source
-	private var mangaQueue = requestedManga.filter { it.source.name == originSource.name }
-	private val originalSourceNames = setOf(originSource.name)
-	private var currentIndex = (savedStateHandle.get<Int>(AppRouter.KEY_INDEX) ?: 0)
-		.coerceIn(mangaQueue.indices)
-
-	private val _currentManga = MutableStateFlow(mangaQueue[currentIndex])
-	val currentManga = _currentManga.asStateFlow()
-	val manga: Manga
-		get() = _currentManga.value
-
-	private val _queueSize = MutableStateFlow(mangaQueue.size)
-	val queueSize = _queueSize.asStateFlow()
-	private val _queuePosition = MutableStateFlow(currentIndex + 1)
-	val queuePosition = _queuePosition.asStateFlow()
-
-	private val _selectedSource = MutableStateFlow<MangaSource?>(null)
-	val selectedSource = _selectedSource.asStateFlow()
-	private val _matchedCount = MutableStateFlow(0)
-	val matchedCount = _matchedCount.asStateFlow()
+	val manga = savedStateHandle.require<ParcelableManga>(AppRouter.KEY_MANGA).manga
 
 	private val results = MutableStateFlow<List<MangaAlternativeModel>>(emptyList())
-	private val sourceComparisonItems = MutableStateFlow<List<SourceReplacementModel>>(emptyList())
-	private val _isComparingSources = MutableStateFlow(false)
-	val isComparingSources = _isComparingSources.asStateFlow()
+	private val sourceSearchStatus = MutableStateFlow(AlternativeSearchStatus())
+	val options = MutableStateFlow(AlternativesSearchOptions(query = manga.title))
+	val referenceManga = MutableStateFlow(MangaAlternativeReference(manga))
+	private val _activePresetTitle = MutableStateFlow<String?>(null)
+	val activePresetTitle = _activePresetTitle.asStateFlow()
+	private var defaultSourceScope = AlternativeSourceScope.ENABLED
+	private var sourceScopeInitialized = false
 
-	private val replacementPlans = MutableStateFlow<List<SourceReplacementPlan>>(emptyList())
-	private val failedSourceNames = mutableSetOf<String>()
-	private val usedSourceNames = mutableSetOf<String>()
-	private val activeMatches = MutableStateFlow<Map<Long, Manga>>(emptyMap())
-	private val _isManualMode = MutableStateFlow(false)
-	val isManualMode = _isManualMode.asStateFlow()
-	private val _isPlanning = MutableStateFlow(true)
-	val isPlanning = _isPlanning.asStateFlow()
-	private val _planningStep = MutableStateFlow(SourceReplacementStep.COMPARING_SOURCES)
-	val planningStep = _planningStep.asStateFlow()
-	private val _planningProgress = MutableStateFlow(0)
-	val planningProgress = _planningProgress.asStateFlow()
-	private val _planningTotal = MutableStateFlow(0)
-	val planningTotal = _planningTotal.asStateFlow()
-	private val _planningSourcesRemaining = MutableStateFlow(0)
-	val planningSourcesRemaining = _planningSourcesRemaining.asStateFlow()
-	private val _planningSampleSize = MutableStateFlow(0)
-	val planningSampleSize = _planningSampleSize.asStateFlow()
-	private val _planningCurrentSource = MutableStateFlow<MangaSource?>(null)
-	val planningCurrentSource = _planningCurrentSource.asStateFlow()
-
-	private var planningJob: Job? = null
 	private var migrationJob: Job? = null
 	private var searchJob: Job? = null
 
-	val onPlanReady = MutableEventFlow<PlanReady>()
-	val onMigrated = MutableEventFlow<MigrationResult>()
-	val onBatchMigrated = MutableEventFlow<BatchMigrationResult>()
-	private val _replacementSummary = MutableStateFlow<ReplacementSummary?>(null)
-	val replacementSummary = _replacementSummary.asStateFlow()
-	private val replacementSourceUsage = linkedMapOf<String, SourceUsage>()
-	private var replacementCount = 0
-
-	private val screenState = combine(
-		isPlanning,
-		isComparingSources,
-		sourceComparisonItems,
-	) { planning, comparing, sourceItems ->
-		ReplacementScreenState(planning, comparing, sourceItems)
+	private val mangaDetails = suspendLazy {
+		mangaRepositoryFactory.create(manga.source).getDetails(manga)
 	}
+
+	val onMigrated = MutableEventFlow<Manga>()
+
+	val searchStatus: StateFlow<AlternativeSearchStatus> = combine(
+		sourceSearchStatus,
+		results,
+		options,
+	) { status, results, options ->
+		status.copy(resultsCount = results.count { !options.hideNoChapters || it.chaptersCount > 0 })
+	}.stateIn(viewModelScope + Dispatchers.Default, SharingStarted.Eagerly, AlternativeSearchStatus())
 
 	val list: StateFlow<List<ListModel>> = combine(
 		results,
 		isLoading,
-		selectedSource,
-		screenState,
-	) { result, loading, source, screen ->
+		options,
+		referenceManga,
+	) { results, loading, options, reference ->
+		val filtered = results
+			.filterNot { options.hideNoChapters && it.chaptersCount == 0 }
+			.sortedWith(alternativeComparator(options, reference.manga, reference.chaptersCount))
 		when {
-			screen.planning -> emptyList()
-			screen.comparing -> screen.sourceItems
-			result.isEmpty() -> listOf(
-				when {
-					loading -> LoadingState()
-					else -> EmptyState(
+			filtered.isEmpty() -> listOf(
+				if (loading) {
+					LoadingState()
+				} else {
+					EmptyState(
 						icon = R.drawable.ic_empty_common,
 						textPrimary = R.string.nothing_found,
-						textSecondary = R.string.source_replacement_empty_summary,
-						actionStringRes = R.string.choose_source,
+						textSecondary = R.string.text_search_holder_secondary,
+						actionStringRes = 0,
 					)
 				},
 			)
 
-			loading -> result + LoadingFooter()
-			else -> result
+			loading -> filtered + LoadingFooter()
+			else -> filtered
 		}
-	}.stateIn(viewModelScope + Dispatchers.Default, SharingStarted.Eagerly, emptyList())
+	}.stateIn(viewModelScope + Dispatchers.Default, SharingStarted.Eagerly, listOf(LoadingState()))
 
 	init {
-		buildReplacementPlan()
+		doSearch()
 	}
 
-	fun selectSource(source: MangaSource?) {
-		if (isPlanning.value) {
-			return
-		}
-		if (source?.name in originalSourceNames) {
-			return
-		}
-		_isComparingSources.value = false
-		sourceComparisonItems.value = emptyList()
-		if (source == null) {
-			_isManualMode.value = true
-			_selectedSource.value = null
-			activeMatches.value = emptyMap()
-			results.value = emptyList()
-			updateMatchedCount()
-			return
-		}
-		_selectedSource.value = source
-		if (isManualMode.value) {
-			activeMatches.value = emptyMap()
-			updateMatchedCount()
-			startSearch()
-		} else {
-			resolveSource(source)
-		}
+	fun retry() = doSearch()
+
+	fun setQuery(query: String) {
+		val value = query.trim()
+		if (value.isEmpty() || value == options.value.query) return
+		updateSearchOptions { copy(query = value) }
 	}
 
-	fun retry() {
-		if (selectedSource.value == null) {
-			showSourceComparison()
-		} else {
-			startSearch()
-		}
+	fun setSourceScope(scope: AlternativeSourceScope) {
+		if (scope == options.value.sourceScope ||
+			(scope == AlternativeSourceScope.CURRENT_PRESET && activePresetTitle.value == null)
+		) return
+		updateSearchOptions { copy(sourceScope = scope) }
 	}
 
-	fun showSourceComparison() {
-		if (isPlanning.value) {
-			return
-		}
-		searchJob?.cancel()
-		_isComparingSources.value = true
-		sourceComparisonItems.value = emptyList()
-		searchJob = launchLoadingJob(Dispatchers.Default) {
-			val manual = isManualMode.value
-			val choices = getAvailableSources().let { available ->
-				if (manual) available.sortedBy { it.source.name } else available
-			}
-			val selectedName = selectedSource.value?.name
-			sourceComparisonItems.value = choices.map { choice ->
-				SourceReplacementModel(
-					source = choice.source,
-					matched = choice.matched,
-					total = choice.total,
-					matchPercent = choice.matchPercent,
-					isSelected = choice.source.name == selectedName,
-				)
-			} + SourceReplacementModel(
-				source = null,
-				matched = 0,
-				total = 0,
-				matchPercent = 0,
-				isSelected = false,
-			)
-		}
+	fun setSameLanguageOnly(enabled: Boolean) {
+		if (enabled != options.value.sameLanguageOnly) updateSearchOptions { copy(sameLanguageOnly = enabled) }
 	}
 
-	private suspend fun getAvailableSources(): List<SourceChoice> {
-		val excludedNames = originalSourceNames + usedSourceNames + failedSourceNames
-		val ranked = replacementPlans.value.filter { it.source.name !in excludedNames }.map { plan ->
-			SourceChoice(
-				source = plan.source,
-				matched = plan.matchedCount,
-				total = plan.total,
-				averageTitleSimilarity = plan.averageTitleSimilarity,
-			)
-		}.sortedWith(
-			compareByDescending<SourceChoice>(SourceChoice::matched)
-				.thenByDescending(SourceChoice::averageTitleSimilarity),
-		)
-		val rankedSourceNames = ranked.mapTo(hashSetOf()) { it.source.name }
-		val sampleSize = replacementPlans.value.firstOrNull()?.total ?: mangaQueue.size.coerceAtMost(25)
-		val other = (sourcesRepository.getEnabledSources() + sourcesRepository.getDisabledSources())
-			.distinctBy(MangaSource::name)
-			.filter { it.name !in excludedNames && it.name !in rankedSourceNames && it != LocalMangaSource }
-			.filter { it.hasCompatibleLanguage(allowUnknown = isManualMode.value) }
-			.sortedBy(MangaSource::name)
-			.map { SourceChoice(it, matched = 0, total = sampleSize, averageTitleSimilarity = 0f) }
-		return ranked + other
+	fun setSameContentTypeOnly(enabled: Boolean) {
+		if (enabled != options.value.sameContentTypeOnly) updateSearchOptions { copy(sameContentTypeOnly = enabled) }
 	}
 
-	private fun MangaSource.hasCompatibleLanguage(allowUnknown: Boolean): Boolean {
-		val originLanguage = originSource.getLocale()?.language?.takeIf(String::isNotBlank) ?: return true
-		val candidateLanguage = getLocale()?.language?.takeIf(String::isNotBlank)
-		return candidateLanguage == originLanguage || (allowUnknown && candidateLanguage == null)
+	fun setHideNoChapters(enabled: Boolean) {
+		if (enabled != options.value.hideNoChapters) options.update { it.copy(hideNoChapters = enabled) }
 	}
+
+	fun setSortOrder(sortOrder: AlternativeSortOrder) {
+		if (sortOrder != options.value.sortOrder) options.update { it.copy(sortOrder = sortOrder) }
+	}
+
+	fun resetOptions() {
+		val defaults = AlternativesSearchOptions(query = manga.title, sourceScope = defaultSourceScope)
+		val current = options.value
+		if (current == defaults) return
+		val requiresSearch = current.query != defaults.query ||
+			current.sourceScope != defaults.sourceScope ||
+			current.sameLanguageOnly != defaults.sameLanguageOnly ||
+			current.sameContentTypeOnly != defaults.sameContentTypeOnly
+		options.value = defaults
+		if (requiresSearch) doSearch()
+	}
+
+	fun hasCustomOptions(): Boolean = !options.value.isDefaultFor(manga.title, defaultSourceScope)
+
+	fun defaultScopeForReset(): AlternativeSourceScope = defaultSourceScope
 
 	fun migrate(target: Manga) {
-		if (migrationJob?.isActive == true) {
+		val candidate = results.value.find { it.manga.id == target.id }
+		if (migrationJob?.isActive == true || candidate?.isMigrationEnabled != true || candidate.chaptersCount == 0) {
 			return
 		}
-		val seed = manga
 		migrationJob = launchLoadingJob(Dispatchers.Default) {
-			Log.i(TAG, "Applying manual replacement: ${seed.logRef()} -> ${target.logRef()}")
-			try {
-				migrateUseCase(seed, target)
-			} catch (e: CancellationException) {
-				throw e
-			} catch (e: Throwable) {
-				Log.e(TAG, "Manual replacement failed: ${seed.logRef()} -> ${target.logRef()}", e)
-				throw e
-			}
-			recordReplacement(target.source)
-			mangaQueue = mangaQueue.filterNot { it.id == seed.id }
-			val remaining = mangaQueue.size
-			if (remaining > 0) {
-				moveToFirstRemaining()
-			}
-			_queueSize.value = remaining
-			updateMatchedCount()
-			if (remaining > 0) {
-				_selectedSource.value = null
-				results.value = emptyList()
-				showSourceComparison()
-			}
-			onMigrated.call(MigrationResult(target, remaining))
-			if (remaining == 0) {
-				_replacementSummary.value = createReplacementSummary()
-			}
+			migrateUseCase(manga, target)
+			onMigrated.call(target)
 		}
 	}
 
-	private fun buildReplacementPlan() {
-		planningJob?.cancel()
-		_isPlanning.value = true
-		_planningStep.value = SourceReplacementStep.COMPARING_SOURCES
-		_planningProgress.value = 0
-		_planningTotal.value = 0
-		_planningSourcesRemaining.value = 0
-		_planningSampleSize.value = 0
-		_planningCurrentSource.value = null
-		results.value = emptyList()
-		planningJob = launchLoadingJob(Dispatchers.Default) {
-			var ready: PlanReady? = null
-			try {
-				val libraryManga = mangaDataRepository.findLibraryMangaBySource(originSource)
-				val sourceManga = mangaDataRepository.findAllMangaBySource(originSource)
-				mangaQueue = (requestedManga.filter { it.source.name == originSource.name } + libraryManga)
-					.distinctBy(Manga::id)
-				replacementCount = 0
-				replacementSourceUsage.clear()
-				_replacementSummary.value = null
-				val initial = requestedManga.first { it.source.name == originSource.name }
-				currentIndex = mangaQueue.indexOfFirst { it.id == initial.id }.coerceAtLeast(0)
-				_currentManga.value = mangaQueue[currentIndex]
-				_queueSize.value = mangaQueue.size
-				_queuePosition.value = currentIndex + 1
-				val comparisonPool = (mangaQueue + sourceManga).distinctBy(Manga::id)
-				failedSourceNames.clear()
-				val plans = replacementPlanner(
-					manga = comparisonPool,
-					onProgress = { progress ->
-						_planningProgress.value = progress.completedChecks
-						_planningTotal.value = progress.totalChecks
-						_planningSourcesRemaining.value = progress.remainingSources
-						_planningSampleSize.value = progress.sampleSize
-					},
-					onSourceFailed = { failedSourceNames += it.name },
-				)
-				replacementPlans.value = plans
-				val best = plans.firstOrNull()
-				_selectedSource.value = best?.source
-				activeMatches.value = emptyMap()
-				updateMatchedCount()
-				ready = PlanReady(best?.matchedCount ?: 0, mangaQueue.size)
-			} catch (e: CancellationException) {
-				throw e
-			} catch (e: Throwable) {
-				Log.e(
-					TAG,
-					"Initial replacement planning failed: origin=${originSource.name} progress=${_planningProgress.value}/${_planningTotal.value}",
-					e,
-				)
-				throw e
-			} finally {
-				_isPlanning.value = false
-			}
-			ready?.let(onPlanReady::call)
-		}
+	private fun updateSearchOptions(block: AlternativesSearchOptions.() -> AlternativesSearchOptions) {
+		options.update(block)
+		doSearch()
 	}
 
-	private fun resolveSource(source: MangaSource) {
-		planningJob?.cancel()
-		searchJob?.cancel()
-		results.value = emptyList()
-		activeMatches.value = emptyMap()
-		updateMatchedCount()
-		_isPlanning.value = true
-		_planningStep.value = SourceReplacementStep.MATCHING_TITLES
-		_planningProgress.value = 0
-		_planningTotal.value = mangaQueue.size
-		_planningSourcesRemaining.value = 0
-		_planningSampleSize.value = mangaQueue.size
-		_planningCurrentSource.value = source
-		planningJob = launchLoadingJob(Dispatchers.Default) {
-			var showManual = false
-			try {
-				val resolved = replacementPlanner.resolve(mangaQueue, source) { completed, total ->
-					_planningProgress.value = completed
-					_planningTotal.value = total
-				}
-				if (selectedSource.value == source && !isManualMode.value) {
-					val combinedMatches = resolved.toMutableMap()
-					var unmatched = mangaQueue.filterNot { it.id in combinedMatches }
-					updateMatchedCount()
-					usedSourceNames += source.name
-					val mixSources = replacementPlans.value.map(SourceReplacementPlan::source)
-						.filter { it.name !in usedSourceNames && it.name !in originalSourceNames }
-						.distinctBy(MangaSource::name)
-					_planningStep.value = SourceReplacementStep.SMART_MIX
-					for ((index, mixSource) in mixSources.withIndex()) {
-						if (unmatched.isEmpty()) {
-							break
-						}
-						_planningCurrentSource.value = mixSource
-						_planningProgress.value = 0
-						_planningTotal.value = unmatched.size
-						_planningSourcesRemaining.value = mixSources.size - index
-						val mixed = replacementPlanner.resolve(unmatched, mixSource) { completed, total ->
-							_planningProgress.value = completed
-							_planningTotal.value = total
-						}
-						usedSourceNames += mixSource.name
-						combinedMatches.putAll(mixed)
-						unmatched = unmatched.filterNot { it.id in mixed }
-					}
-					activeMatches.value = combinedMatches
-					updateMatchedCount()
-					val replacements = getMatches()
-					_planningStep.value = SourceReplacementStep.APPLYING_MATCHES
-					_planningCurrentSource.value = null
-					_planningProgress.value = 0
-					_planningTotal.value = replacements.size
-					replacements.forEachIndexed { index, (seed, target) ->
-						Log.i(
-							TAG,
-							"Applying batch replacement ${index + 1}/${replacements.size}: ${seed.logRef()} -> ${target.logRef()}",
-						)
-						try {
-							migrateUseCase(seed, target)
-						} catch (e: CancellationException) {
-							throw e
-						} catch (e: Throwable) {
-							Log.e(
-								TAG,
-								"Batch replacement failed at ${index + 1}/${replacements.size}: ${seed.logRef()} -> ${target.logRef()}",
-								e,
-							)
-							throw e
-						}
-						recordReplacement(target.source)
-						_planningProgress.value = index + 1
-					}
-					val replacedIds = replacements.mapTo(hashSetOf()) { it.first.id }
-					mangaQueue = mangaQueue.filterNot { it.id in replacedIds }
-					val remaining = mangaQueue.size
-					if (remaining > 0) {
-						moveToFirstRemaining()
-					}
-					_queueSize.value = remaining
-					activeMatches.value = emptyMap()
-					_isManualMode.value = remaining > 0
-					_selectedSource.value = null
-					updateMatchedCount()
-					showManual = remaining > 0
-					onBatchMigrated.call(BatchMigrationResult(replacements.size, remaining))
-					if (remaining == 0) {
-						_replacementSummary.value = createReplacementSummary()
-					}
-				}
-			} catch (e: CancellationException) {
-				throw e
-			} catch (e: Throwable) {
-				Log.e(
-					TAG,
-					"Replacement job failed: step=${_planningStep.value} selectedSource=${selectedSource.value?.name} currentSource=${_planningCurrentSource.value?.name} progress=${_planningProgress.value}/${_planningTotal.value}",
-					e,
-				)
-				throw e
-			} finally {
-				_isPlanning.value = false
-			}
-			if (showManual) {
-				showSourceComparison()
-			}
-		}
-	}
-
-	fun cancelPendingChecks() {
-		planningJob?.cancel()
-		searchJob?.cancel()
-	}
-
-	private fun moveToFirstRemaining() {
-		currentIndex = 0
-		savedStateHandle[AppRouter.KEY_INDEX] = currentIndex
-		val next = mangaQueue.first()
-		_queuePosition.value = 1
-		_currentManga.value = next
-	}
-
-	private fun updateMatchedCount() {
-		_matchedCount.value = if (selectedSource.value == null) 0 else getMatches().size
-	}
-
-	private fun recordReplacement(source: MangaSource) {
-		replacementCount++
-		val previous = replacementSourceUsage[source.name]
-		replacementSourceUsage[source.name] = SourceUsage(source, (previous?.count ?: 0) + 1)
-	}
-
-	private fun createReplacementSummary() = ReplacementSummary(
-		replaced = replacementCount,
-		sources = replacementSourceUsage.values.toList(),
-	)
-
-	private fun getMatches(): List<Pair<Manga, Manga>> {
-		val resolved = activeMatches.value
-		return mangaQueue.mapNotNull { seed ->
-			resolved[seed.id]?.let { target -> seed to target }
-		}
-	}
-
-	private fun startSearch() {
-		val seed = manga
-		val source = selectedSource.value ?: run {
-			results.value = emptyList()
-			return
-		}
-		val query = seed.title
-		searchJob?.cancel()
-		results.value = emptyList()
+	private fun doSearch() {
+		results.update { current -> current.map { it.copy(isMigrationEnabled = false) } }
+		val previousJob = searchJob
 		searchJob = launchLoadingJob(Dispatchers.Default) {
-			val reference = runCatchingCancellable {
-				mangaRepositoryFactory.create(seed.source).getDetails(seed)
-			}.getOrDefault(seed)
-			val candidates = alternativesUseCase.searchSource(reference, source, query)
-			candidates.collect { candidate ->
-				if (manga.id != seed.id || selectedSource.value != source) {
-					return@collect
+			previousJob?.cancelAndJoin()
+			sourceSearchStatus.value = AlternativeSearchStatus(isRunning = true)
+			var receivedResult = false
+			try {
+				val reference = mangaDetails.getOrDefault(manga)
+				val referenceChapters = reference.chaptersCount()
+				referenceManga.value = MangaAlternativeReference(reference, referenceChapters)
+				if (!sourceScopeInitialized) {
+					val scopeOptions = alternativesUseCase.getSourceScopeOptions(reference.source)
+					defaultSourceScope = scopeOptions.defaultScope
+					_activePresetTitle.value = scopeOptions.presetTitle
+					options.update { it.copy(sourceScope = defaultSourceScope) }
+					sourceScopeInitialized = true
 				}
-				val model = candidate.toAlternativeModel(reference)
-				results.update { current ->
-					if (current.any { it.manga.id == candidate.id }) current else current + model
+				val searchOptions = options.value
+				alternativesUseCase(reference, searchOptions).collect { event ->
+					when (event) {
+						is AlternativeSearchEvent.Progress -> sourceSearchStatus.update {
+							it.copy(
+								completedSources = maxOf(it.completedSources, event.completedSources),
+								totalSources = event.totalSources,
+							)
+						}
+
+						is AlternativeSearchEvent.Result -> {
+							if (!receivedResult) {
+								results.value = emptyList()
+								receivedResult = true
+							}
+							val model = MangaAlternativeModel(
+								mangaModel = mangaListMapper.toListModel(event.manga, ListMode.GRID) as MangaGridModel,
+								referenceChapters = referenceChapters,
+							)
+							results.update { current ->
+								current.filterNot { it.manga.id == model.manga.id } + model
+							}
+						}
+					}
+				}
+				if (!receivedResult) results.value = emptyList()
+			} finally {
+				sourceSearchStatus.update { it.copy(isRunning = false) }
+			}
+		}
+	}
+
+	private fun alternativeComparator(
+		options: AlternativesSearchOptions,
+		reference: Manga,
+		referenceChapters: Int,
+	): Comparator<MangaAlternativeModel> = Comparator { left, right ->
+		val primary = when (options.sortOrder) {
+			AlternativeSortOrder.BEST_MATCH -> compareValues(
+				right.manga.titleMatchScore(options.query),
+				left.manga.titleMatchScore(options.query),
+			).takeUnless { it == 0 } ?: compareValues(
+				right.chaptersCount > 0,
+				left.chaptersCount > 0,
+			).takeUnless { it == 0 } ?: compareValues(
+				right.manga.source.priority(reference.source),
+				left.manga.source.priority(reference.source),
+			)
+
+			AlternativeSortOrder.MOST_CHAPTERS -> compareValues(right.chaptersCount, left.chaptersCount)
+			AlternativeSortOrder.CLOSEST_CHAPTER_COUNT -> compareValues(
+				left.chapterDistanceFrom(referenceChapters),
+				right.chapterDistanceFrom(referenceChapters),
+			)
+			AlternativeSortOrder.SOURCE_PRIORITY -> compareValues(
+				right.manga.source.priority(reference.source),
+				left.manga.source.priority(reference.source),
+			)
+		}
+		primary.takeUnless { it == 0 }
+			?: compareValues(right.chaptersCount, left.chaptersCount).takeUnless { it == 0 }
+			?: left.manga.source.name.compareTo(right.manga.source.name, ignoreCase = true).takeUnless { it == 0 }
+			?: left.manga.title.compareTo(right.manga.title, ignoreCase = true).takeUnless { it == 0 }
+			?: left.manga.id.compareTo(right.manga.id)
+	}
+
+	private fun MangaAlternativeModel.chapterDistanceFrom(referenceChapters: Int): Int =
+		if (chaptersCount == 0) Int.MAX_VALUE else abs(chaptersCount - referenceChapters)
+
+	private fun Manga.titleMatchScore(query: String): Int {
+		val normalizedQuery = query.normalizeTitle()
+		if (normalizedQuery.isEmpty()) return 0
+		return (sequenceOf(title) + altTitles.asSequence()).maxOf { candidate ->
+			val normalizedCandidate = candidate.normalizeTitle()
+			when {
+				normalizedCandidate == normalizedQuery -> 100
+				normalizedCandidate.startsWith(normalizedQuery) || normalizedQuery.startsWith(normalizedCandidate) -> 85
+				normalizedCandidate.contains(normalizedQuery) || normalizedQuery.contains(normalizedCandidate) -> 75
+				else -> {
+					val queryTokens = normalizedQuery.splitToSequence(' ').filter(String::isNotEmpty).toSet()
+					val candidateTokens = normalizedCandidate.splitToSequence(' ').filter(String::isNotEmpty).toSet()
+					val total = maxOf(queryTokens.size, candidateTokens.size)
+					if (total == 0) 0 else queryTokens.intersect(candidateTokens).size * 60 / total
 				}
 			}
 		}
 	}
 
-	private suspend fun Manga.toAlternativeModel(reference: Manga) = MangaAlternativeModel(
-		mangaModel = mangaListMapper.toListModel(this, ListMode.GRID) as MangaGridModel,
-		referenceChapters = reference.chaptersCount(),
-	)
+	private fun String.normalizeTitle(): String = lowercase(Locale.ROOT)
+		.replace(NON_TITLE_CHARACTER, " ")
+		.trim()
+		.replace(MULTIPLE_SPACES, " ")
 
-	data class SourceChoice(
-		val source: MangaSource,
-		val matched: Int,
-		val total: Int,
-		val averageTitleSimilarity: Float,
-	) {
-		val matchPercent: Int
-			get() = if (total == 0) 0 else matched * 100 / total
+	private fun MangaSource.priority(ref: MangaSource): Int {
+		if (this !is MangaParserSource || ref !is MangaParserSource) return 0
+		var result = 0
+		if (locale == ref.locale) result += 4 else if (locale.toLocale() == Locale.getDefault()) result += 2
+		if (contentType == ref.contentType) result++
+		return result
 	}
-
-	data class PlanReady(
-		val matched: Int,
-		val total: Int,
-	)
-
-	data class MigrationResult(
-		val target: Manga,
-		val remaining: Int,
-	)
-
-	data class BatchMigrationResult(
-		val replaced: Int,
-		val remaining: Int,
-	)
-
-	data class SourceUsage(
-		val source: MangaSource,
-		val count: Int,
-	)
-
-	data class ReplacementSummary(
-		val replaced: Int,
-		val sources: List<SourceUsage>,
-	)
-
-	private fun Manga.logRef(): String = "title=\"$title\" id=$id source=${source.name}"
 
 	private companion object {
-		const val TAG = "SourceReplacement"
+		val NON_TITLE_CHARACTER = Regex("[^\\p{L}\\p{N}]+")
+		val MULTIPLE_SPACES = Regex("\\s+")
 	}
 }
-
-enum class SourceReplacementStep {
-	COMPARING_SOURCES,
-	MATCHING_TITLES,
-	SMART_MIX,
-	APPLYING_MATCHES,
-}
-
-private data class ReplacementScreenState(
-	val planning: Boolean,
-	val comparing: Boolean,
-	val sourceItems: List<SourceReplacementModel>,
-)
