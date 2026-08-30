@@ -47,6 +47,18 @@ android {
 		}
 		resValue 'string', 'tg_backup_bot_token', localProperties.getProperty('tg_backup_bot_token', '')
 	}
+	signingConfigs {
+		standalone {
+			// the key material comes from the environment so that nothing secret is committed
+			def keystore = System.getenv('SIGNING_KEYSTORE')
+			if (keystore) {
+				storeFile = file(keystore)
+				storePassword = System.getenv('SIGNING_STORE_PASSWORD')
+				keyAlias = System.getenv('SIGNING_KEY_ALIAS')
+				keyPassword = System.getenv('SIGNING_KEY_PASSWORD')
+			}
+		}
+	}
 	buildTypes {
 		debug {
 			applicationIdSuffix = '.debug'
@@ -59,6 +71,16 @@ android {
 		nightly {
 			initWith release
 			applicationIdSuffix = '.nightly'
+		}
+		// an optimized build that carries its own application id and signature, so that it can be installed
+		// next to both a regular and a debug Kotatsu Redo instead of replacing either of them
+		standalone {
+			initWith release
+			applicationIdSuffix = '.standalone'
+			versionNameSuffix = '-standalone'
+			if (System.getenv('SIGNING_KEYSTORE')) {
+				signingConfig signingConfigs.standalone
+			}
 		}
 	}
 	buildFeatures {

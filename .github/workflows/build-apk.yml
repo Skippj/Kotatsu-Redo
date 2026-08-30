@@ -1,0 +1,109 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Assemble and publish a draft release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The standalone build is minified, so it has to be signed to be installable. A keystore kept in the
+      # repository secrets is reused when present, which keeps the signature stable so that a later build
+      # installs over this one; otherwise a throwaway one is generated for this run only.
+      - name: Prepare the signing key
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -eu
+          KEYSTORE="$RUNNER_TEMP/standalone.jks"
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+            ALIAS="${KEY_ALIAS:-standalone}"
+            STORE_PASS="$STORE_PASSWORD"
+            KEY_PASS="${KEY_PASSWORD:-$STORE_PASSWORD}"
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            STORE_PASS="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+            echo "::add-mask::$STORE_PASS"
+            ALIAS=standalone
+            KEY_PASS="$STORE_PASS"
+            keytool -genkeypair -noprompt \
+              -keystore "$KEYSTORE" -storetype PKCS12 -alias "$ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$STORE_PASS" -keypass "$KEY_PASS" \
+              -dname "CN=Kotatsu Redo standalone build"
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "SIGNING_KEYSTORE=$KEYSTORE"
+            echo "SIGNING_STORE_PASSWORD=$STORE_PASS"
+            echo "SIGNING_KEY_ALIAS=$ALIAS"
+            echo "SIGNING_KEY_PASSWORD=$KEY_PASS"
+          } >> "$GITHUB_ENV"
+
+      - name: Assemble the APKs
+        run: ./gradlew --no-daemon assembleStandalone assembleDebug
+
+      - name: Name the APKs after the branch and the commit
+        id: apk
+        run: |
+          set -eu
+          mkdir -p out
+          SUFFIX="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
+          cp app/build/outputs/apk/standalone/app-standalone.apk "out/kotatsu-redo-$SUFFIX.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/kotatsu-redo-debug-$SUFFIX.apk"
+          ls -l out
+
+      # A draft release is visible only to people with write access and, unlike a published
+      # pre-release, does not trigger the Discord release webhook.
+      - name: Publish the APKs as a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STABLE_SIGNATURE: ${{ steps.signing.outputs.stable }}
+        run: |
+          set -eu
+          TAG="build-${GITHUB_SHA::7}"
+          if [ "$STABLE_SIGNATURE" = "true" ]; then
+            SIGNING_NOTE="Signed with the keystore kept in the repository secrets, so a later build installs over this one."
+          else
+            SIGNING_NOTE="Signed with a key generated for this build only, so a later build will not install over this one: uninstall it first, or add the keystore to the repository secrets as \`SIGNING_KEYSTORE_BASE64\` and \`SIGNING_STORE_PASSWORD\` to keep the signature stable."
+          fi
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" out/*.apk \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "Build: ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" \
+            --notes "Built from \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA::7}\`.
+
+          | APK | Application id | Notes |
+          | --- | --- | --- |
+          | \`kotatsu-redo-…\` | \`io.github.kotatsuredo.kotatsu.standalone\` | Optimized and minified. $SIGNING_NOTE |
+          | \`kotatsu-redo-debug-…\` | \`io.github.kotatsuredo.kotatsu.debug\` | Not minified, larger and slower; useful to get a readable stack trace. |
+
+          Both carry their own application id, so they install next to a regular Kotatsu Redo and next to each other, and neither touches its data. Neither receives in-app updates."
