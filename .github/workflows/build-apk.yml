@@ -67,6 +67,16 @@ jobs:
             echo "SIGNING_KEY_PASSWORD=$KEY_PASS"
           } >> "$GITHUB_ENV"
 
+      # Minifying this app needs more than the 4 GB the project asks for by default, which is enough for a
+      # development build but leaves R8 thrashing the garbage collector until it gives up.
+      - name: Raise the build memory limit
+        run: |
+          set -eu
+          {
+            echo "org.gradle.jvmargs=-Xmx8g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          } >> gradle.properties
+          tail -n 3 gradle.properties
+
       - name: Assemble the APKs
         run: |
           set -o pipefail
