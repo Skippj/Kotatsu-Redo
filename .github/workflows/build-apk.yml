@@ -29,7 +29,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # The standalone build is minified, so it has to be signed to be installable. A keystore kept in the
+      # The optimized build is minified, so it has to be signed to be installable. A keystore kept in the
       # repository secrets is reused when present, which keeps the signature stable so that a later build
       # installs over this one; otherwise a throwaway one is generated for this run only.
       - name: Prepare the signing key
@@ -41,23 +41,23 @@ jobs:
           KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           set -eu
-          KEYSTORE="$RUNNER_TEMP/standalone.jks"
+          KEYSTORE="$RUNNER_TEMP/signing.jks"
           if [ -n "${KEYSTORE_BASE64:-}" ]; then
             printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
-            ALIAS="${KEY_ALIAS:-standalone}"
+            ALIAS="${KEY_ALIAS:-kotatsu}"
             STORE_PASS="$STORE_PASSWORD"
             KEY_PASS="${KEY_PASSWORD:-$STORE_PASSWORD}"
             echo "stable=true" >> "$GITHUB_OUTPUT"
           else
             STORE_PASS="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
             echo "::add-mask::$STORE_PASS"
-            ALIAS=standalone
+            ALIAS=kotatsu
             KEY_PASS="$STORE_PASS"
             keytool -genkeypair -noprompt \
               -keystore "$KEYSTORE" -storetype PKCS12 -alias "$ALIAS" \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "$STORE_PASS" -keypass "$KEY_PASS" \
-              -dname "CN=Kotatsu Redo standalone build"
+              -dname "CN=Kotatsu Redo personal build"
             echo "stable=false" >> "$GITHUB_OUTPUT"
           fi
           {
@@ -70,7 +70,7 @@ jobs:
       - name: Assemble the APKs
         run: |
           set -o pipefail
-          ./gradlew --no-daemon assembleStandalone assembleDebug 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+          ./gradlew --no-daemon assembleNightly assembleDebug 2>&1 | tee "$RUNNER_TEMP/gradle.log"
 
       # Gradle prints compiler and annotation processor errors far above its own stack trace, where the
       # tail of a job log does not reach, so they are repeated here at the very end of the log.
@@ -86,7 +86,10 @@ jobs:
           set -eu
           mkdir -p out
           SUFFIX="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}"
-          cp app/build/outputs/apk/standalone/app-standalone.apk "out/kotatsu-redo-$SUFFIX.apk"
+          # the nightly variant renames its output after the build date, so the file is looked up
+          OPTIMIZED="$(find app/build/outputs/apk/nightly -name '*.apk' ! -name '*unsigned*' | head -n 1)"
+          test -n "$OPTIMIZED"
+          cp "$OPTIMIZED" "out/kotatsu-redo-$SUFFIX.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "out/kotatsu-redo-debug-$SUFFIX.apk"
           ls -l out
 
@@ -113,7 +116,7 @@ jobs:
 
           | APK | Application id | Notes |
           | --- | --- | --- |
-          | \`kotatsu-redo-…\` | \`io.github.kotatsuredo.kotatsu.standalone\` | Optimized and minified. $SIGNING_NOTE |
+          | \`kotatsu-redo-…\` | \`io.github.kotatsuredo.kotatsu.nightly\` | Optimized and minified. $SIGNING_NOTE |
           | \`kotatsu-redo-debug-…\` | \`io.github.kotatsuredo.kotatsu.debug\` | Not minified, larger and slower; useful to get a readable stack trace. |
 
           Both carry their own application id, so they install next to a regular Kotatsu Redo and next to each other, and neither touches its data. Neither receives in-app updates."
