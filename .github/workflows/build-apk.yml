@@ -68,7 +68,17 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Assemble the APKs
-        run: ./gradlew --no-daemon assembleStandalone assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleStandalone assembleDebug 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+
+      # Gradle prints compiler and annotation processor errors far above its own stack trace, where the
+      # tail of a job log does not reach, so they are repeated here at the very end of the log.
+      - name: Surface the compiler errors
+        if: failure()
+        run: |
+          grep -nE '^e: |\[ksp\]|error:|Caused by:|Unresolved|Could not' "$RUNNER_TEMP/gradle.log" \
+            | grep -vE 'D8: |Kotlin metadata' | head -n 60 || echo "no error lines matched"
 
       - name: Name the APKs after the branch and the commit
         id: apk
