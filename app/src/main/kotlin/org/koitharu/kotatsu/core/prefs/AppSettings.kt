@@ -650,6 +650,21 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		prefs.edit { putString(KEY_PAGES_SAVE_DIR, uri?.toString()) }
 	}
 
+	/**
+	 * A directory the downloaded PDF files are put into, or `null` to use the shared `Download` one.
+	 */
+	val pdfSaveDirUri: Uri?
+		get() = prefs.getString(KEY_PDF_SAVE_DIR, null)?.toUriOrNull()
+
+	fun getPdfSaveDir(context: Context): DocumentFile? =
+		pdfSaveDirUri?.let {
+			DocumentFile.fromTreeUri(context, it)?.takeIf { doc -> doc.canWrite() }
+		}
+
+	fun setPdfSaveDir(uri: Uri?) {
+		prefs.edit { putString(KEY_PDF_SAVE_DIR, uri?.toString()) }
+	}
+
 	fun getMangaListBadges(): Int {
 		val raw = prefs.getStringSet(KEY_MANGA_LIST_BADGES, mangaListBadgesDefault).orEmpty()
 		var result = 0
@@ -910,6 +925,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 		const val KEY_DETAILS_LAST_TAB = "details_last_tab"
 		const val KEY_READING_TIME = "reading_time"
 		const val KEY_PAGES_SAVE_DIR = "pages_dir"
+		const val KEY_PDF_SAVE_DIR = "pdf_dir"
 		const val KEY_PAGES_SAVE_ASK = "pages_dir_ask"
 		const val KEY_STATS_ENABLED = "stats_on"
 		const val KEY_FEED_HEADER = "feed_header"

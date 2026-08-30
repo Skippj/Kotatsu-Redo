@@ -3,6 +3,7 @@ package org.koitharu.kotatsu.local.data.output
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import okhttp3.internal.closeQuietly
 import org.koitharu.kotatsu.core.pdf.PdfWriter
 import org.koitharu.kotatsu.core.util.MimeTypes
-import org.koitharu.kotatsu.core.util.PublicDownloadsDir
+import org.koitharu.kotatsu.core.util.ExportFileWriter
 import org.koitharu.kotatsu.core.util.ext.MimeType
 import org.koitharu.kotatsu.core.util.ext.toFileNameSafe
 import org.koitharu.kotatsu.local.domain.model.LocalManga
@@ -37,6 +38,7 @@ class LocalMangaPdfOutput(
 	rootFile: File,
 	private val manga: Manga,
 	private val isSplitByChapters: Boolean,
+	private val destination: Uri?,
 ) : LocalMangaOutput(rootFile) {
 
 	private val mutex = Mutex()
@@ -121,12 +123,13 @@ class LocalMangaPdfOutput(
 	 * Moves a produced file from the app storage into the shared `Download` directory of the device.
 	 */
 	private fun publish(file: File) {
-		PublicDownloadsDir.publish(
+		ExportFileWriter.write(
 			context = context,
 			source = file,
 			displayName = file.name,
 			mimeType = MIME_TYPE_PDF,
 			subDir = if (isSplitByChapters) manga.title.toFileNameSafe() else null,
+			treeUri = destination,
 		)
 		file.delete()
 	}
@@ -217,8 +220,15 @@ class LocalMangaPdfOutput(
 		private const val PATTERN_PAGE_FILE = "%05d"
 		private const val MAX_TITLE_LENGTH = 32
 
-		fun create(context: Context, manga: Manga, isSplitByChapters: Boolean): LocalMangaPdfOutput {
-			checkCanWrite(context)
+		fun create(
+			context: Context,
+			manga: Manga,
+			isSplitByChapters: Boolean,
+			destination: Uri?,
+		): LocalMangaPdfOutput {
+			if (destination == null) {
+				checkCanWriteDownloadDir(context)
+			}
 			// the app own external storage: big enough for a whole manga and not scanned by the local library
 			val base = context.getExternalFilesDir(DIR_WORK) ?: File(context.cacheDir, DIR_WORK)
 			val workDir = File(base, manga.id.toString())
@@ -228,6 +238,7 @@ class LocalMangaPdfOutput(
 				rootFile = workDir,
 				manga = manga,
 				isSplitByChapters = isSplitByChapters,
+				destination = destination,
 			)
 		}
 
@@ -236,7 +247,7 @@ class LocalMangaPdfOutput(
 		 * so writing into it requires a runtime permission that the user may have not granted. It is checked
 		 * upfront, to fail before anything is downloaded rather than after.
 		 */
-		private fun checkCanWrite(context: Context) {
+		private fun checkCanWriteDownloadDir(context: Context) {
 			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
 				return
 			}

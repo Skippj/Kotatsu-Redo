@@ -50,6 +50,10 @@ class DownloadsSettingsFragment :
 		if (it != null) onDirectoryPicked(it)
 	}
 
+	private val pickPdfDirLauncher = OpenDocumentTreeHelper(this) {
+		if (it != null) onPdfDirectoryPicked(it)
+	}
+
 	override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
 		addPreferencesFromResource(R.xml.pref_downloads)
 		findPreference<ListPreference>(AppSettings.KEY_DOWNLOADS_FORMAT)?.run {
@@ -76,6 +80,7 @@ class DownloadsSettingsFragment :
 		findPreference<Preference>(AppSettings.KEY_LOCAL_STORAGE)?.bindStorageName()
 		findPreference<Preference>(AppSettings.KEY_LOCAL_MANGA_DIRS)?.bindDirectoriesCount()
 		findPreference<Preference>(AppSettings.KEY_PAGES_SAVE_DIR)?.bindPagesDirectory()
+		findPreference<Preference>(AppSettings.KEY_PDF_SAVE_DIR)?.bindPdfDirectory()
 		settings.subscribe(this)
 	}
 
@@ -100,6 +105,10 @@ class DownloadsSettingsFragment :
 
 			AppSettings.KEY_PAGES_SAVE_DIR -> {
 				findPreference<Preference>(AppSettings.KEY_PAGES_SAVE_DIR)?.bindPagesDirectory()
+			}
+
+			AppSettings.KEY_PDF_SAVE_DIR -> {
+				findPreference<Preference>(AppSettings.KEY_PDF_SAVE_DIR)?.bindPdfDirectory()
 			}
 		}
 	}
@@ -129,6 +138,15 @@ class DownloadsSettingsFragment :
 				true
 			}
 
+			AppSettings.KEY_PDF_SAVE_DIR -> {
+				if (!pickPdfDirLauncher.tryLaunch(settings.pdfSaveDirUri)) {
+					Snackbar.make(
+						requireView(), R.string.operation_not_supported, Snackbar.LENGTH_SHORT,
+					).show()
+				}
+				true
+			}
+
 			else -> super.onPreferenceTreeClick(preference)
 		}
 	}
@@ -139,6 +157,14 @@ class DownloadsSettingsFragment :
 			it.canWrite()
 		}
 		settings.setPagesSaveDir(doc?.uri)
+	}
+
+	private fun onPdfDirectoryPicked(uri: Uri) {
+		storageManager.takePermissions(uri)
+		val doc = DocumentFile.fromTreeUri(requireContext(), uri)?.takeIf {
+			it.canWrite()
+		}
+		settings.setPdfSaveDir(doc?.uri)
 	}
 
 	private fun Preference.bindStorageName() {
@@ -166,6 +192,16 @@ class DownloadsSettingsFragment :
 			}
 			summary = df?.getDisplayPath(this@bindPagesDirectory.context)
 				?: this@bindPagesDirectory.context.getString(androidx.preference.R.string.not_set)
+		}
+	}
+
+	private fun Preference.bindPdfDirectory() {
+		viewLifecycleScope.launch {
+			val df = withContext(Dispatchers.IO) {
+				settings.getPdfSaveDir(this@bindPdfDirectory.context)
+			}
+			summary = df?.getDisplayPath(this@bindPdfDirectory.context)
+				?: this@bindPdfDirectory.context.getString(R.string.pdf_save_location_default)
 		}
 	}
 

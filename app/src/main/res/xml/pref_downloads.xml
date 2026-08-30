@@ -23,6 +23,12 @@
 		android:title="@string/preferred_download_format"
 		app:useSimpleSummaryProvider="true" />
 
+	<Preference
+		android:icon="@drawable/ic_folder_file"
+		android:key="pdf_dir"
+		android:persistent="false"
+		android:title="@string/pdf_save_location" />
+
 	<ListPreference
 		android:entries="@array/metered_network_options"
 		android:icon="@drawable/ic_network_cellular"

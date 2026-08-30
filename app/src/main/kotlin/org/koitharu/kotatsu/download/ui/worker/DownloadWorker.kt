@@ -215,6 +215,7 @@ class DownloadWorker @AssistedInject constructor(
 					root = destination,
 					manga = mangaDetails,
 					format = task.format ?: settings.preferredDownloadFormat,
+					pdfDestination = settings.pdfSaveDirUri,
 				)
 				val coverUrl = mangaDetails.largeCoverUrl.ifNullOrEmpty { mangaDetails.coverUrl }
 				if (!coverUrl.isNullOrEmpty()) {

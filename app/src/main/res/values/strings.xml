@@ -629,9 +629,11 @@
     <string name="automatic">Automatic</string>
     <string name="single_cbz_file">Single CBZ file</string>
     <string name="multiple_cbz_files">Multiple CBZ files</string>
+    <string name="pdf_save_location">PDF save location</string>
+    <string name="pdf_save_location_default">Download folder</string>
     <string name="single_pdf_file">Single PDF file</string>
     <string name="multiple_pdf_files">Multiple PDF files</string>
-    <string name="download_format_pdf_hint">PDF files are saved into the Download/Kotatsu folder of your device. They cannot be opened in the reader and are not shown in your library</string>
+    <string name="download_format_pdf_hint">PDF files are saved into the folder set in the download settings, by default Download/Kotatsu. They cannot be opened in the reader and are not shown in your library</string>
     <string name="reading_stats">Reading statistics</string>
     <string name="other_manga">Other manga</string>
     <string name="less_than_minute">Less than a minute</string>

@@ -1,14 +1,16 @@
 package org.koitharu.kotatsu.core.pdf
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.PorterDuff
+import android.os.Build
 import androidx.annotation.WorkerThread
-import com.davemorrissey.labs.subscaleview.decoder.ImageDecodeException
 import org.jetbrains.annotations.Blocking
 import org.koitharu.kotatsu.core.image.BitmapDecoderCompat
 import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
+import org.koitharu.kotatsu.parsers.util.runCatchingCancellable
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -197,8 +199,9 @@ class PdfWriter(
 			private fun reEncode(imageFile: File): JpegImage? {
 				val bitmap = decodeSoftware(imageFile)
 				try {
-					if (bitmap.hasAlpha()) {
-						// JPEG has no alpha channel: put the transparent parts on white instead of black
+					// JPEG has no alpha channel, so the transparent parts are put on white instead of black.
+					// A bitmap that cannot be drawn on is encoded as is rather than failing the whole download.
+					if (bitmap.hasAlpha() && bitmap.isMutable && bitmap.config != CONFIG_HARDWARE) {
 						Canvas(bitmap).drawColor(Color.WHITE, PorterDuff.Mode.DST_OVER)
 					}
 					val buffer = ByteArrayOutputStream(DEFAULT_JPEG_BUFFER_SIZE)
@@ -220,26 +223,33 @@ class PdfWriter(
 			}
 
 			/**
-			 * [BitmapDecoderCompat.decode] returns a hardware bitmap on Android 9+, and such a bitmap can
-			 * neither be drawn on a software canvas nor read back, so a mutable one is requested explicitly.
+			 * Decoding through [android.graphics.ImageDecoder], as [BitmapDecoderCompat] does, may produce a
+			 * hardware bitmap, which can neither be drawn on a software canvas nor read back by the encoder.
+			 * [BitmapFactory] never does, so it is preferred here, and the generic decoder is kept only as a
+			 * fallback for the formats it cannot read, such as AVIF.
 			 */
 			private fun decodeSoftware(imageFile: File): Bitmap {
 				val type = BitmapDecoderCompat.probeMimeType(imageFile)
-				val bitmap = try {
-					imageFile.inputStream().buffered().use { input ->
-						BitmapDecoderCompat.decode(input, type, isMutable = true)
-					}
-				} catch (e: IllegalStateException) {
-					// an animated image cannot be decoded into a mutable bitmap
-					e.printStackTraceDebug()
-					BitmapDecoderCompat.decode(imageFile)
+				if (type?.subtype != FORMAT_AVIF) {
+					val options = BitmapFactory.Options()
+					options.inMutable = true
+					options.inPreferredConfig = Bitmap.Config.ARGB_8888
+					runCatchingCancellable {
+						BitmapFactory.decodeFile(imageFile.absolutePath, options)
+					}.onFailure {
+						it.printStackTraceDebug()
+					}.getOrNull()?.let { return it }
 				}
-				if (bitmap.isMutable) {
-					return bitmap
-				}
-				val copy = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-				bitmap.recycle()
-				return copy ?: throw ImageDecodeException(null, type?.subtype)
+				return BitmapDecoderCompat.decode(imageFile)
+			}
+
+			private const val FORMAT_AVIF = "avif"
+
+			/** `null` below Android 8, where hardware bitmaps do not exist yet */
+			private val CONFIG_HARDWARE = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+				Bitmap.Config.HARDWARE
+			} else {
+				null
 			}
 
 			private const val COLOR_SPACE_RGB = "DeviceRGB"

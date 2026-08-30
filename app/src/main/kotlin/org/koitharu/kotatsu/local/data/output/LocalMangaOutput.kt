@@ -1,6 +1,7 @@
 package org.koitharu.kotatsu.local.data.output
 
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -50,6 +51,7 @@ sealed class LocalMangaOutput(
 			root: File,
 			manga: Manga,
 			format: DownloadFormat,
+			pdfDestination: Uri? = null,
 		): LocalMangaOutput = withContext(Dispatchers.IO) {
 			val targetFormat = if (format == DownloadFormat.AUTOMATIC) {
 				if (manga.chapters.let { it != null && it.size <= 3 }) {
@@ -60,11 +62,11 @@ sealed class LocalMangaOutput(
 			} else {
 				format
 			}
-			checkNotNull(getImpl(context, root, manga, onlyIfExists = false, format = targetFormat))
+			checkNotNull(getImpl(context, root, manga, false, targetFormat, pdfDestination))
 		}
 
 		suspend fun get(root: File, manga: Manga): LocalMangaOutput? = withContext(Dispatchers.IO) {
-			getImpl(context = null, root, manga, onlyIfExists = true, format = DownloadFormat.AUTOMATIC)
+			getImpl(null, root, manga, onlyIfExists = true, format = DownloadFormat.AUTOMATIC, pdfDestination = null)
 		}
 
 		private suspend fun getImpl(
@@ -73,6 +75,7 @@ sealed class LocalMangaOutput(
 			manga: Manga,
 			onlyIfExists: Boolean,
 			format: DownloadFormat,
+			pdfDestination: Uri?,
 		): LocalMangaOutput? {
 			mutex.withLock {
 				if (!onlyIfExists && format.isPdf) {
@@ -82,6 +85,7 @@ sealed class LocalMangaOutput(
 						context = checkNotNull(context) { "Context is required to write a PDF" },
 						manga = manga,
 						isSplitByChapters = format == DownloadFormat.MULTIPLE_PDF,
+						destination = pdfDestination,
 					)
 				}
 				var i = 0
