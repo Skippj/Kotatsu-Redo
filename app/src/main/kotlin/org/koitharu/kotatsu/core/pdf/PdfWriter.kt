@@ -3,10 +3,12 @@ package org.koitharu.kotatsu.core.pdf
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.PorterDuff
 import androidx.annotation.WorkerThread
-import androidx.core.graphics.createBitmap
+import com.davemorrissey.labs.subscaleview.decoder.ImageDecodeException
 import org.jetbrains.annotations.Blocking
 import org.koitharu.kotatsu.core.image.BitmapDecoderCompat
+import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -193,10 +195,11 @@ class PdfWriter(
 			}
 
 			private fun reEncode(imageFile: File): JpegImage? {
-				var bitmap = BitmapDecoderCompat.decode(imageFile)
+				val bitmap = decodeSoftware(imageFile)
 				try {
 					if (bitmap.hasAlpha()) {
-						bitmap = bitmap.flattenOnWhite()
+						// JPEG has no alpha channel: put the transparent parts on white instead of black
+						Canvas(bitmap).drawColor(Color.WHITE, PorterDuff.Mode.DST_OVER)
 					}
 					val buffer = ByteArrayOutputStream(DEFAULT_JPEG_BUFFER_SIZE)
 					if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, buffer)) {
@@ -216,13 +219,27 @@ class PdfWriter(
 				}
 			}
 
-			private fun Bitmap.flattenOnWhite(): Bitmap {
-				val result = createBitmap(width, height)
-				val canvas = Canvas(result)
-				canvas.drawColor(Color.WHITE)
-				canvas.drawBitmap(this, 0f, 0f, null)
-				recycle()
-				return result
+			/**
+			 * [BitmapDecoderCompat.decode] returns a hardware bitmap on Android 9+, and such a bitmap can
+			 * neither be drawn on a software canvas nor read back, so a mutable one is requested explicitly.
+			 */
+			private fun decodeSoftware(imageFile: File): Bitmap {
+				val type = BitmapDecoderCompat.probeMimeType(imageFile)
+				val bitmap = try {
+					imageFile.inputStream().buffered().use { input ->
+						BitmapDecoderCompat.decode(input, type, isMutable = true)
+					}
+				} catch (e: IllegalStateException) {
+					// an animated image cannot be decoded into a mutable bitmap
+					e.printStackTraceDebug()
+					BitmapDecoderCompat.decode(imageFile)
+				}
+				if (bitmap.isMutable) {
+					return bitmap
+				}
+				val copy = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+				bitmap.recycle()
+				return copy ?: throw ImageDecodeException(null, type?.subtype)
 			}
 
 			private const val COLOR_SPACE_RGB = "DeviceRGB"

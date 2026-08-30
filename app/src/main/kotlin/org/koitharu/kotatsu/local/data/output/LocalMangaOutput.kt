@@ -1,5 +1,6 @@
 package org.koitharu.kotatsu.local.data.output
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -42,10 +43,10 @@ sealed class LocalMangaOutput(
 
 		const val ENTRY_NAME_INDEX = "index.json"
 		const val SUFFIX_TMP = ".tmp"
-		const val FILENAME_SKIP = ".notamanga"
 		private val mutex = Mutex()
 
 		suspend fun getOrCreate(
+			context: Context,
 			root: File,
 			manga: Manga,
 			format: DownloadFormat,
@@ -59,14 +60,15 @@ sealed class LocalMangaOutput(
 			} else {
 				format
 			}
-			checkNotNull(getImpl(root, manga, onlyIfExists = false, format = targetFormat))
+			checkNotNull(getImpl(context, root, manga, onlyIfExists = false, format = targetFormat))
 		}
 
 		suspend fun get(root: File, manga: Manga): LocalMangaOutput? = withContext(Dispatchers.IO) {
-			getImpl(root, manga, onlyIfExists = true, format = DownloadFormat.AUTOMATIC)
+			getImpl(context = null, root, manga, onlyIfExists = true, format = DownloadFormat.AUTOMATIC)
 		}
 
 		private suspend fun getImpl(
+			context: Context?,
 			root: File,
 			manga: Manga,
 			onlyIfExists: Boolean,
@@ -74,9 +76,10 @@ sealed class LocalMangaOutput(
 		): LocalMangaOutput? {
 			mutex.withLock {
 				if (!onlyIfExists && format.isPdf) {
-					// PDF files are never reused or merged into, so a fresh name is always taken
-					return LocalMangaPdfOutput(
-						rootFile = LocalMangaPdfOutput.findFreeFile(root, manga, format == DownloadFormat.MULTIPLE_PDF),
+					// a PDF is written into a temporary directory and then published to the shared Download one,
+					// so it never reuses nor conflicts with anything inside the manga storage
+					return LocalMangaPdfOutput.create(
+						context = checkNotNull(context) { "Context is required to write a PDF" },
 						manga = manga,
 						isSplitByChapters = format == DownloadFormat.MULTIPLE_PDF,
 					)

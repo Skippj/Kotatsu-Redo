@@ -211,6 +211,7 @@ class DownloadWorker @AssistedInject constructor(
 				val repo = mangaRepositoryFactory.create(manga.source)
 				val mangaDetails = if (manga.chapters.isNullOrEmpty() || manga.description.isNullOrEmpty()) repo.getDetails(manga) else manga
 				output = LocalMangaOutput.getOrCreate(
+					context = applicationContext,
 					root = destination,
 					manga = mangaDetails,
 					format = task.format ?: settings.preferredDownloadFormat,
