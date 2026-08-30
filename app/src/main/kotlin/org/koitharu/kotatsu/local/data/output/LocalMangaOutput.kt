@@ -10,6 +10,7 @@ import org.koitharu.kotatsu.core.util.ext.MimeType
 import org.koitharu.kotatsu.core.util.ext.printStackTraceDebug
 import org.koitharu.kotatsu.core.util.ext.toFileNameSafe
 import org.koitharu.kotatsu.local.data.input.LocalMangaParser
+import org.koitharu.kotatsu.local.domain.model.LocalManga
 import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.model.MangaChapter
 import org.koitharu.kotatsu.parsers.util.runCatchingCancellable
@@ -31,10 +32,17 @@ sealed class LocalMangaOutput(
 
 	abstract suspend fun cleanup()
 
+	/**
+	 * A local manga that has been written by this output, or `null` if the resulting files
+	 * are not a part of the local library, as it is for the PDF formats.
+	 */
+	open suspend fun getLocalManga(): LocalManga? = LocalMangaParser(rootFile).getManga(withDetails = false)
+
 	companion object {
 
 		const val ENTRY_NAME_INDEX = "index.json"
 		const val SUFFIX_TMP = ".tmp"
+		const val FILENAME_SKIP = ".notamanga"
 		private val mutex = Mutex()
 
 		suspend fun getOrCreate(
@@ -65,6 +73,14 @@ sealed class LocalMangaOutput(
 			format: DownloadFormat,
 		): LocalMangaOutput? {
 			mutex.withLock {
+				if (!onlyIfExists && format.isPdf) {
+					// PDF files are never reused or merged into, so a fresh name is always taken
+					return LocalMangaPdfOutput(
+						rootFile = LocalMangaPdfOutput.findFreeFile(root, manga, format == DownloadFormat.MULTIPLE_PDF),
+						manga = manga,
+						isSplitByChapters = format == DownloadFormat.MULTIPLE_PDF,
+					)
+				}
 				var i = 0
 				val baseName = manga.title.toFileNameSafe()
 				while (true) {
@@ -88,9 +104,11 @@ sealed class LocalMangaOutput(
 						}
 
 						!onlyIfExists -> when (format) {
-							DownloadFormat.AUTOMATIC -> null
 							DownloadFormat.SINGLE_CBZ -> LocalMangaZipOutput(zip, manga)
 							DownloadFormat.MULTIPLE_CBZ -> LocalMangaDirOutput(dir, manga)
+							DownloadFormat.AUTOMATIC,
+							DownloadFormat.SINGLE_PDF,
+							DownloadFormat.MULTIPLE_PDF -> null
 						}
 
 						else -> null

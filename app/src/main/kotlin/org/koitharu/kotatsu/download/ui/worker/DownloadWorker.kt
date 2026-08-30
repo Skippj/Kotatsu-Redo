@@ -133,7 +133,12 @@ class DownloadWorker @AssistedInject constructor(
 		setForeground(getForegroundInfo())
 		val manga = mangaDataRepository.findMangaById(task.mangaId, withChapters = true) ?: return Result.failure()
 		publishState(DownloadState(manga = manga, isIndeterminate = true).also { lastPublishedState = it })
-		val downloadedIds = getDoneChapters(manga)
+		// a PDF export is never incremental, so already saved chapters should not be skipped
+		val downloadedIds: Set<Long> = if ((task.format ?: settings.preferredDownloadFormat).isPdf) {
+			emptySet()
+		} else {
+			getDoneChapters(manga)
+		}
 		return try {
 			val pausingHandle = PausingHandle()
 			if (task.isPaused) {
@@ -282,9 +287,13 @@ class DownloadWorker @AssistedInject constructor(
 				publishState(currentState.copy(isIndeterminate = true, eta = -1L, isStuck = false))
 				output.mergeWithExisting()
 				output.finish()
-				val localManga = LocalMangaParser(output.rootFile).getManga(withDetails = false)
-				localStorageChanges.emit(localManga)
-				publishState(currentState.copy(localManga = localManga, eta = -1L, isStuck = false))
+				val localManga = output.getLocalManga()
+				if (localManga != null) {
+					localStorageChanges.emit(localManga)
+				}
+				publishState(
+					currentState.copy(localManga = localManga, isFinished = true, eta = -1L, isStuck = false),
+				)
 			} catch (e: Exception) {
 				if (e !is CancellationException) {
 					publishState(

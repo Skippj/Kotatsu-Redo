@@ -28,6 +28,7 @@ import org.koitharu.kotatsu.core.util.ext.tryLaunch
 import org.koitharu.kotatsu.core.util.ext.viewLifecycleScope
 import org.koitharu.kotatsu.download.ui.worker.DownloadWorker
 import org.koitharu.kotatsu.local.data.LocalStorageManager
+import org.koitharu.kotatsu.parsers.util.find
 import org.koitharu.kotatsu.parsers.util.names
 import org.koitharu.kotatsu.settings.utils.DozeHelper
 import javax.inject.Inject
@@ -54,6 +55,14 @@ class DownloadsSettingsFragment :
 		findPreference<ListPreference>(AppSettings.KEY_DOWNLOADS_FORMAT)?.run {
 			entryValues = DownloadFormat.entries.names()
 			setDefaultValueCompat(DownloadFormat.AUTOMATIC.name)
+			summaryProvider = Preference.SummaryProvider<ListPreference> { preference ->
+				val entry = preference.entry ?: preference.entries?.firstOrNull()
+				if (DownloadFormat.entries.find(preference.value)?.isPdf == true) {
+					getString(R.string.text_and_hint_pattern, entry, getString(R.string.download_format_pdf_hint))
+				} else {
+					entry
+				}
+			}
 		}
 		findPreference<ListPreference>(AppSettings.KEY_DOWNLOADS_METERED_NETWORK)?.run {
 			entryValues = TriStateOption.entries.names()

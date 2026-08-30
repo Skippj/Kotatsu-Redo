@@ -607,6 +607,9 @@
     <string name="preferred_download_format">Formato download preferito</string>
     <string name="single_cbz_file">File CBZ singolo</string>
     <string name="multiple_cbz_files">Molti file CBZ</string>
+    <string name="single_pdf_file">File PDF singolo</string>
+    <string name="multiple_pdf_files">Molti file PDF</string>
+    <string name="download_format_pdf_hint">I file PDF non possono essere aperti nel lettore e non compaiono nella libreria</string>
     <string name="reading_stats">Lettura statistiche</string>
     <string name="remove_from_history">Rimuovi dalla cronologia</string>
     <string name="statistics">Statistiche</string>

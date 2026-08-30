@@ -92,6 +92,8 @@
 		<item>@string/automatic</item>
 		<item>@string/single_cbz_file</item>
 		<item>@string/multiple_cbz_files</item>
+		<item>@string/single_pdf_file</item>
+		<item>@string/multiple_pdf_files</item>
 	</string-array>
 	<string-array name="tracker_frequency" translatable="false">
 		<item>@string/manual</item>

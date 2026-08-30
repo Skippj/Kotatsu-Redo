@@ -20,6 +20,7 @@ data class DownloadState(
 	val eta: Long = -1L,
 	val isStuck: Boolean = false,
 	val localManga: LocalManga? = null,
+	val isFinished: Boolean = false,
 	val downloadedChapters: Int = 0,
 	val timestamp: Long = System.currentTimeMillis(),
 ) {
@@ -31,10 +32,10 @@ data class DownloadState(
 	val percent: Float = if (max > 0) progress.toFloat() / max else PROGRESS_NONE
 
 	val isFinalState: Boolean
-		get() = localManga != null || (error != null && !isPaused)
+		get() = isFinished || (error != null && !isPaused)
 
 	val isParticularProgress: Boolean
-		get() = localManga == null && error == null && !isPaused && !isStopped && max > 0 && !isIndeterminate
+		get() = !isFinished && error == null && !isPaused && !isStopped && max > 0 && !isIndeterminate
 
 	fun toWorkData() = Data.Builder()
 		.putLong(DATA_MANGA_ID, manga.id)

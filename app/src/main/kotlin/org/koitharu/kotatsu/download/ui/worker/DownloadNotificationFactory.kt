@@ -144,10 +144,12 @@ class DownloadNotificationFactory @AssistedInject constructor(
 		)
 		when {
 			state == null -> Unit
-			state.localManga != null -> { // downloaded, final state
+			state.isFinished -> { // downloaded, final state
 				builder.setProgress(0, 0, false)
 				builder.setContentText(context.getString(R.string.download_complete))
-				builder.setContentIntent(createMangaIntent(context, state.localManga.manga))
+				state.localManga?.let { // a manga exported to PDF cannot be opened in the app
+					builder.setContentIntent(createMangaIntent(context, it.manga))
+				}
 				builder.setAutoCancel(true)
 				builder.setSmallIcon(android.R.drawable.stat_sys_download_done)
 				builder.setCategory(null)

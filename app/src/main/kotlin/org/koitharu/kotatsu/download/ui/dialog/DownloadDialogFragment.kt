@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.Spinner
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.isVisible
@@ -36,7 +37,10 @@ import org.koitharu.kotatsu.parsers.util.format
 import org.koitharu.kotatsu.settings.storage.DirectoryModel
 
 @AndroidEntryPoint
-class DownloadDialogFragment : AlertDialogFragment<DialogDownloadBinding>(), View.OnClickListener {
+class DownloadDialogFragment :
+	AlertDialogFragment<DialogDownloadBinding>(),
+	View.OnClickListener,
+	AdapterView.OnItemSelectedListener {
 
 	private val viewModel by viewModels<DownloadDialogViewModel>()
 	private var optionViews: Array<out TwoLinesItemView>? = null
@@ -64,6 +68,7 @@ class DownloadDialogFragment : AlertDialogFragment<DialogDownloadBinding>(), Vie
 		binding.buttonCancel.setOnClickListener(this)
 		binding.buttonConfirm.setOnClickListener(this)
 		binding.textViewMore.setOnClickListener(this)
+		binding.spinnerFormat.onItemSelectedListener = this
 
 		binding.textViewTip.isVisible = viewModel.manga.size == 1
 		binding.textViewSummary.text = viewModel.manga.joinToStringWithLimit(binding.root.context, 120) { it.title }
@@ -234,11 +239,25 @@ class DownloadDialogFragment : AlertDialogFragment<DialogDownloadBinding>(), Vie
 		dismiss()
 	}
 
+	override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+		if (parent?.id == R.id.spinner_format) {
+			updateFormatHint()
+		}
+	}
+
+	override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+
 	private fun showMoreOptions(isVisible: Boolean) = viewBinding?.apply {
 		cardFormat.isVisible = isVisible
 		textViewFormat.isVisible = isVisible
 		cardDestination.isVisible = isVisible
 		textViewDestination.isVisible = isVisible
+		updateFormatHint()
+	}
+
+	private fun updateFormatHint() = viewBinding?.run {
+		textViewFormatHint.isVisible = cardFormat.isVisible &&
+			DownloadFormat.entries.getOrNull(spinnerFormat.selectedItemPosition)?.isPdf == true
 	}
 
 	private fun setCheckedOption(id: Int) {

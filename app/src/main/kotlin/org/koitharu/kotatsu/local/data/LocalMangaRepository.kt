@@ -44,7 +44,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val MAX_PARALLELISM = 4
-private const val FILENAME_SKIP = ".notamanga"
 
 @Singleton
 class LocalMangaRepository @Inject constructor(
@@ -261,5 +260,5 @@ class LocalMangaRepository @Inject constructor(
 
 	private fun Collection<LocalManga>.unwrap(): List<Manga> = map { it.manga }
 
-	private fun File.shouldSkip(): Boolean = isDirectory && File(this, FILENAME_SKIP).exists()
+	private fun File.shouldSkip(): Boolean = isDirectory && File(this, LocalMangaOutput.FILENAME_SKIP).exists()
 }
