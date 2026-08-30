@@ -59,8 +59,10 @@ class PdfWriter(
 	fun addPage(imageFile: File): Boolean {
 		check(!isFinished) { "PdfWriter is already finished" }
 		val image = JpegImage.from(imageFile) ?: return false
-		// scale the image down to fit an A4 page, keeping the aspect ratio. Smaller images are not upscaled
-		val scale = minOf(PAGE_WIDTH / image.width, PAGE_HEIGHT / image.height, 1f)
+		// The page is sized after the image rather than the other way around: every page gets the same width
+		// and a height that follows the aspect ratio. Fitting a fixed page instead would shrink a tall webtoon
+		// strip to a thin sliver in the middle of it. The only limit is the largest page a PDF may declare.
+		val scale = minOf(PAGE_WIDTH / image.width, MAX_PAGE_SIDE / image.height)
 		val pageWidth = image.width * scale
 		val pageHeight = image.height * scale
 
@@ -365,9 +367,11 @@ class PdfWriter(
 		const val NAME_IMAGE = "Im0"
 		const val INITIAL_CAPACITY = 64
 
-		/** An A4 page size in the PDF user space units (1/72 inch) */
+		/** The width every page is scaled to, in the PDF user space units (1/72 inch): the A4 one */
 		const val PAGE_WIDTH = 595f
-		const val PAGE_HEIGHT = 842f
+
+		/** The largest side a page may declare, 200 inches, as limited by the PDF format */
+		const val MAX_PAGE_SIDE = 14400f
 
 		fun OutputStream.writeAscii(value: String) = write(value.toByteArray(Charsets.ISO_8859_1))
 
