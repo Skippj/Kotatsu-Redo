@@ -67,20 +67,22 @@ jobs:
             echo "SIGNING_KEY_PASSWORD=$KEY_PASS"
           } >> "$GITHUB_ENV"
 
-      # Minifying this app needs more than the 4 GB the project asks for by default, which is enough for a
-      # development build but leaves R8 thrashing the garbage collector until it gives up.
-      - name: Raise the build memory limit
+      # The out of memory error comes from the Kotlin compiler, whose daemon the project caps at 2 GB: enough
+      # for an incremental development build, not for compiling the whole app in one go. Both heaps are
+      # raised, within what a runner can hold at once, and the last value of a key is the one that counts.
+      - name: Raise the build memory limits
         run: |
           set -eu
           {
-            echo "org.gradle.jvmargs=-Xmx8g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+            echo "org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+            echo "kotlin.daemon.jvmargs=-Xmx5g"
           } >> gradle.properties
-          tail -n 3 gradle.properties
+          free -g
 
       - name: Assemble the APKs
         run: |
           set -o pipefail
-          ./gradlew --no-daemon assembleNightly assembleDebug 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+          ./gradlew --no-daemon assembleNightly 2>&1 | tee "$RUNNER_TEMP/gradle.log"
 
       # Gradle prints compiler and annotation processor errors far above its own stack trace, where the
       # tail of a job log does not reach, so they are repeated here at the very end of the log.
@@ -100,7 +102,6 @@ jobs:
           OPTIMIZED="$(find app/build/outputs/apk/nightly -name '*.apk' ! -name '*unsigned*' | head -n 1)"
           test -n "$OPTIMIZED"
           cp "$OPTIMIZED" "out/kotatsu-redo-$SUFFIX.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "out/kotatsu-redo-debug-$SUFFIX.apk"
           ls -l out
 
       # A draft release is visible only to people with write access and, unlike a published
@@ -124,9 +125,6 @@ jobs:
             --title "Build: ${GITHUB_REF_NAME} (${GITHUB_SHA::7})" \
             --notes "Built from \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA::7}\`.
 
-          | APK | Application id | Notes |
-          | --- | --- | --- |
-          | \`kotatsu-redo-…\` | \`io.github.kotatsuredo.kotatsu.nightly\` | Optimized and minified. $SIGNING_NOTE |
-          | \`kotatsu-redo-debug-…\` | \`io.github.kotatsuredo.kotatsu.debug\` | Not minified, larger and slower; useful to get a readable stack trace. |
+          Optimized and minified, application id \`io.github.kotatsuredo.kotatsu.nightly\`, so it installs next to a regular and a debug Kotatsu Redo without touching their data. It does not receive in-app updates.
 
-          Both carry their own application id, so they install next to a regular Kotatsu Redo and next to each other, and neither touches its data. Neither receives in-app updates."
+          $SIGNING_NOTE"
